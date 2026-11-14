@@ -36,6 +36,11 @@ scratch/
 # Variáveis de ambiente locais
 .env*.local
 
+# Arquivos compactados
+*.zip
+*.tar
+*.gz
+
 # Arquivos do sistema operacional
 Thumbs.db
 .DS_Store
