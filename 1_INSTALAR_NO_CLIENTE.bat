@@ -52,6 +52,28 @@ echo [*] Configurando inicializacao automatica ao ligar o notebook...
 powershell -NoProfile -Command "$WshShell = New-Object -ComObject WScript.Shell; $StartupPath = [Environment]::GetFolderPath('Startup'); $Shortcut = $WshShell.CreateShortcut($StartupPath + '\BarbeariaVIP_AutoBoot.lnk'); $Shortcut.TargetPath = '%DESTINO%\INICIAR_SISTEMA.bat'; $Shortcut.WorkingDirectory = '%DESTINO%'; $Shortcut.WindowStyle = 7; $Shortcut.Save()"
 echo [OK] Sistema configurado para ligar junto com o Windows!
 
+:: 6. Conectar central de atualizacoes do GitHub para atualizacoes pelo site
+echo [*] Conectando a central de atualizacoes do GitHub...
+where git >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    if exist "C:\Program Files\Git\cmd\git.exe" (
+        set "PATH=C:\Program Files\Git\cmd;%PATH%"
+    ) else (
+        echo [*] Instalando suporte a atualizacoes automaticas...
+        winget install --id Git.Git -e --source winget --accept-source-agreements --accept-package-agreements >nul 2>&1
+        set "PATH=C:\Program Files\Git\cmd;%PATH%"
+    )
+)
+where git >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+    if not exist "%DESTINO%\.git" git -C "%DESTINO%" init >nul 2>&1
+    git -C "%DESTINO%" remote remove origin >nul 2>&1
+    git -C "%DESTINO%" remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git >nul 2>&1
+    git -C "%DESTINO%" fetch origin main --quiet >nul 2>&1
+    git -C "%DESTINO%" branch -M main >nul 2>&1
+    echo [OK] Central de atualizacoes conectada com sucesso!
+)
+
 echo.
 echo =======================================================
 echo          INSTALACAO CONCLUIDA COM SUCESSO!
