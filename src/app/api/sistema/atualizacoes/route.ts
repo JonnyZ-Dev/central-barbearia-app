@@ -123,14 +123,16 @@ export async function GET() {
  */
 export async function POST() {
   try {
-    // 1. Executa o git fetch e reset --hard protegendo banco de dados e sessão
-    await runGit('git fetch origin main --quiet');
+    // 1. Executa o git fetch, branch -M main e reset --hard protegendo banco de dados e sessão
+    await runGit('git fetch origin main');
+    await runGit('git branch -M main');
     const pullOutput = await runGit('git reset --hard origin/main');
 
     // 2. Cria script temporário para compilar e reiniciar o servidor em segundo plano
     const batPath = path.join(APP_DIR, 'REINICIAR_ATUALIZACAO.bat');
     const batContent = `@echo off
 cd /d "${APP_DIR}"
+set "PATH=C:\\Program Files\\Git\\cmd;C:\\Program Files\\nodejs;%PATH%"
 set "NODE_CMD=node"
 if exist "C:\\Program Files\\nodejs\\node.exe" set "NODE_CMD=C:\\Program Files\\nodejs\\node.exe"
 timeout /t 1 /nobreak >nul

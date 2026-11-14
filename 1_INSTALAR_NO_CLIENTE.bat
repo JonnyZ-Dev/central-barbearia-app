@@ -71,6 +71,8 @@ if %ERRORLEVEL% EQU 0 (
     git -C "%DESTINO%" remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git >nul 2>&1
     git -C "%DESTINO%" fetch origin main --quiet >nul 2>&1
     git -C "%DESTINO%" branch -M main >nul 2>&1
+    git -C "%DESTINO%" config user.name "Barbearia VIP Cliente" >nul 2>&1
+    git -C "%DESTINO%" config user.email "cliente@barbeariavip.local" >nul 2>&1
     git -C "%DESTINO%" reset --hard origin/main >nul 2>&1
     echo [OK] Central de atualizacoes conectada com sucesso!
 )

@@ -33,6 +33,20 @@ if not exist ".git" (
     git reset --hard origin/main >nul 2>&1
 )
 
+:: Configurar autor caso nao exista
+git config user.name >nul 2>&1
+if %ERRORLEVEL% NEQ 0 git config user.name "Barbearia VIP Cliente"
+git config user.email >nul 2>&1
+if %ERRORLEVEL% NEQ 0 git config user.email "cliente@barbeariavip.local"
+
+:: Garante que o HEAD exista
+git rev-parse --verify HEAD >nul 2>&1
+if %ERRORLEVEL% NEQ 0 (
+    git fetch origin main --quiet >nul 2>&1
+    git branch -M main >nul 2>&1
+    git reset --hard origin/main >nul 2>&1
+)
+
 git fetch origin main --quiet >nul 2>&1
 set COMMITS_PENDENTES=0
 for /f %%i in ('git rev-list --count HEAD..origin/main 2^>nul') do set COMMITS_PENDENTES=%%i

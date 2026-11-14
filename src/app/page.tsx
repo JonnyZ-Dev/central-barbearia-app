@@ -271,26 +271,28 @@ export default function Dashboard() {
       const json = await res.json();
       if (json.sucesso) {
         mostrarFeedback("Atualizações aplicadas! Compilando nova versão... A tela atualizará sozinha assim que o servidor estiver pronto.", "success");
-        // Polling para aguardar o novo servidor recompilar e responder na porta 3000
+        // Aguarda 6 segundos iniciais e faz polling a cada 2s (ate 40 tentativas)
         setTimeout(() => {
-          const inicio = Date.now();
+          let tentativas = 0;
+          const maxTentativas = 40;
           const timer = setInterval(async () => {
+            tentativas++;
             try {
-              const ping = await fetch("/api/sistema/atualizacoes", { cache: "no-store" });
-              if (ping.ok) {
+              const r = await fetch("/api/sistema/atualizacoes", { cache: "no-store" });
+              if (r.ok) {
                 clearInterval(timer);
                 window.location.reload();
+                return;
               }
             } catch (err) {
-              // Servidor ainda recompilando em segundo plano
+              // Servidor ainda recompilando ou inicializando
             }
-            // Timeout de segurança após 2 minutos caso ocorra falha imprevista
-            if (Date.now() - inicio > 120000) {
+            if (tentativas >= maxTentativas) {
               clearInterval(timer);
               window.location.reload();
             }
           }, 2000);
-        }, 5000);
+        }, 6000);
       } else {
         mostrarFeedback(json.erro || "Falha ao aplicar atualizações.", "error");
         setAplicandoAtualizacao(false);
