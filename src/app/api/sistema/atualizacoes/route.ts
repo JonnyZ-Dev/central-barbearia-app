@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
+import fs from 'fs';
 
 const execAsync = promisify(exec);
 const APP_DIR = process.cwd();
@@ -125,10 +126,29 @@ export async function POST() {
     // 1. Executa o git pull protegendo alterações locais
     const pullOutput = await runGit('git pull origin main');
 
-    // 2. Retorna sucesso informando que os arquivos foram atualizados
+    // 2. Cria script temporário para compilar e reiniciar o servidor em segundo plano
+    const batPath = path.join(APP_DIR, 'REINICIAR_ATUALIZACAO.bat');
+    const batContent = `@echo off
+timeout /t 1 /nobreak >nul
+for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
+call node node_modules\\next\\dist\\bin\\next build
+start "Barbearia_Server" /min node node_modules\\next\\dist\\bin\\next start -p 3000 -H 0.0.0.0
+del "%~f0" >nul 2>&1
+exit
+`;
+    fs.writeFileSync(batPath, batContent);
+
+    // 3. Dispara o script em processo filho independente (detached)
+    const child = spawn('cmd.exe', ['/c', batPath], {
+      cwd: APP_DIR,
+      detached: true,
+      stdio: 'ignore',
+    });
+    child.unref();
+
     return NextResponse.json({
       sucesso: true,
-      mensagem: 'Atualizações baixadas com sucesso!',
+      mensagem: 'Atualizações baixadas! O sistema está compilando a nova versão e recarregará a tela automaticamente.',
       detalhes: pullOutput,
     });
   } catch (error: any) {
