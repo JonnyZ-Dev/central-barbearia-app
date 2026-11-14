@@ -38,7 +38,7 @@ if %ERRORLEVEL% EQU 0 (
         if "%%i" neq "0" (
             if "%%i" neq "" (
                 echo.
-                echo [+] Atualizando sistema do GitHub (%%i melhorias novas)...
+                echo [+] Atualizando sistema do GitHub: %%i novas melhorias
                 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
                 git pull origin main
                 call "%NODE_CMD%" node_modules\next\dist\bin\next build
