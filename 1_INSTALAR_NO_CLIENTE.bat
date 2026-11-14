@@ -29,7 +29,7 @@ echo.
 if /i "%ORIGEM:~0,-1%" NEQ "%DESTINO%" (
     echo [*] Copiando arquivos do sistema para o disco local (%DESTINO%)...
     if not exist "%DESTINO%" mkdir "%DESTINO%"
-    xcopy "%ORIGEM%*" "%DESTINO%\" /E /I /H /Y /Q /EXCLUDE:%ORIGEM%database\barbearia.db
+    robocopy "%ORIGEM:~0,-1%" "%DESTINO%" /E /XD ".git" "scratch" "backups" /NFL /NDL /NJH /NJS
     echo [OK] Copia concluida!
     cd /d "%DESTINO%"
 ) else (
