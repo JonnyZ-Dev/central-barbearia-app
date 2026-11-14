@@ -270,16 +270,33 @@ export default function Dashboard() {
       const res = await fetch("/api/sistema/atualizacoes", { method: "POST" });
       const json = await res.json();
       if (json.sucesso) {
-        mostrarFeedback("Atualizações aplicadas! Compilando nova versão... Recarregando página em 15 segundos.", "success");
+        mostrarFeedback("Atualizações aplicadas! Compilando nova versão... A tela atualizará sozinha assim que o servidor estiver pronto.", "success");
+        // Polling para aguardar o novo servidor recompilar e responder na porta 3000
         setTimeout(() => {
-          window.location.reload();
-        }, 15000);
+          const inicio = Date.now();
+          const timer = setInterval(async () => {
+            try {
+              const ping = await fetch("/api/sistema/atualizacoes", { cache: "no-store" });
+              if (ping.ok) {
+                clearInterval(timer);
+                window.location.reload();
+              }
+            } catch (err) {
+              // Servidor ainda recompilando em segundo plano
+            }
+            // Timeout de segurança após 2 minutos caso ocorra falha imprevista
+            if (Date.now() - inicio > 120000) {
+              clearInterval(timer);
+              window.location.reload();
+            }
+          }, 2000);
+        }, 5000);
       } else {
         mostrarFeedback(json.erro || "Falha ao aplicar atualizações.", "error");
+        setAplicandoAtualizacao(false);
       }
     } catch (e) {
       mostrarFeedback("Erro ao conectar ao atualizador.", "error");
-    } finally {
       setAplicandoAtualizacao(false);
     }
   };

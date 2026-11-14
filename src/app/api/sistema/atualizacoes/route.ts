@@ -123,16 +123,20 @@ export async function GET() {
  */
 export async function POST() {
   try {
-    // 1. Executa o git pull protegendo alterações locais
-    const pullOutput = await runGit('git pull origin main');
+    // 1. Executa o git fetch e reset --hard protegendo banco de dados e sessão
+    await runGit('git fetch origin main --quiet');
+    const pullOutput = await runGit('git reset --hard origin/main');
 
     // 2. Cria script temporário para compilar e reiniciar o servidor em segundo plano
     const batPath = path.join(APP_DIR, 'REINICIAR_ATUALIZACAO.bat');
     const batContent = `@echo off
+cd /d "${APP_DIR}"
+set "NODE_CMD=node"
+if exist "C:\\Program Files\\nodejs\\node.exe" set "NODE_CMD=C:\\Program Files\\nodejs\\node.exe"
 timeout /t 1 /nobreak >nul
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
-call node node_modules\\next\\dist\\bin\\next build
-start "Barbearia_Server" /min node node_modules\\next\\dist\\bin\\next start -p 3000 -H 0.0.0.0
+call "%NODE_CMD%" node_modules\\next\\dist\\bin\\next build
+start "Barbearia_Server" /min "%NODE_CMD%" node_modules\\next\\dist\\bin\\next start -p 3000 -H 0.0.0.0
 del "%~f0" >nul 2>&1
 exit
 `;
