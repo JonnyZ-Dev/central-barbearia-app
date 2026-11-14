@@ -5,7 +5,8 @@ import pino from "pino";
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore
 } from "@whiskeysockets/baileys";
 import { getDb } from "./db";
 
@@ -44,6 +45,112 @@ const lidToPhoneMap = new Map<string, string>();
 // Controle de mensagens enviadas pelo próprio robô (para diferenciar de mensagens enviadas por humanos no celular)
 const mensagensEnviadasPeloRobo = new Set<string>();
 
+// Implementação leve de CacheStore compatível com Baileys para retry de mensagens
+interface CacheStore {
+  get<T>(key: string): T | undefined;
+  set<T>(key: string, value: T): void;
+  del(key: string): void;
+  flushAll(): void;
+}
+
+class SimpleCacheStore implements CacheStore {
+  private map = new Map<string, any>();
+  get<T>(key: string): T | undefined {
+    return this.map.get(key);
+  }
+  set<T>(key: string, value: T): void {
+    this.map.set(key, value);
+    if (this.map.size > 2000) {
+      const first = this.map.keys().next().value;
+      if (first) this.map.delete(first);
+    }
+  }
+  del(key: string): void {
+    this.map.delete(key);
+  }
+  flushAll(): void {
+    this.map.clear();
+  }
+}
+
+// Cache oficial do Baileys para rastrear retries e evitar mensagens presas em "Aguardando mensagem..."
+const msgRetryCounterCache = new SimpleCacheStore();
+
+// Cache em memória de alta performance para mensagens recentes (permite responder a retries de criptografia do WhatsApp)
+const mensagensArmazenadasStore = new Map<string, any>();
+
+function salvarMensagemNoCache(id: string, remoteJid: string | undefined, message: any) {
+  if (!id || !message) return;
+  try {
+    mensagensArmazenadasStore.set(id, message);
+    if (remoteJid) {
+      mensagensArmazenadasStore.set(`${remoteJid}:${id}`, message);
+    }
+    // Mantém no máximo 2000 mensagens na RAM
+    if (mensagensArmazenadasStore.size > 2000) {
+      const firstKey = mensagensArmazenadasStore.keys().next().value;
+      if (firstKey) mensagensArmazenadasStore.delete(firstKey);
+    }
+
+    // Persistência rápida no SQLite para sobreviver a reinicializações
+    try {
+      const db = getDb();
+      db.prepare(`
+        CREATE TABLE IF NOT EXISTS bot_mensagens_cache (
+          id TEXT PRIMARY KEY,
+          remote_jid TEXT,
+          message_json TEXT,
+          criado_em INTEGER
+        )
+      `).run();
+      db.prepare(`
+        INSERT OR REPLACE INTO bot_mensagens_cache (id, remote_jid, message_json, criado_em)
+        VALUES (?, ?, ?, ?)
+      `).run(id, remoteJid || "", JSON.stringify(message), Date.now());
+
+      // Manutenção periódica leve (mantém últimas 500 mensagens no banco)
+      if (Math.random() < 0.05) {
+        db.prepare(`
+          DELETE FROM bot_mensagens_cache 
+          WHERE id NOT IN (
+            SELECT id FROM bot_mensagens_cache ORDER BY criado_em DESC LIMIT 500
+          )
+        `).run();
+      }
+    } catch (e) {}
+  } catch (err) {}
+}
+
+async function recuperarMensagemDoCache(key: any): Promise<any> {
+  if (!key) return undefined;
+  const id = key.id;
+  const remoteJid = key.remoteJid;
+  if (!id) return undefined;
+
+  // 1. Tenta recuperar da RAM pela chave composta
+  if (remoteJid && mensagensArmazenadasStore.has(`${remoteJid}:${id}`)) {
+    return mensagensArmazenadasStore.get(`${remoteJid}:${id}`);
+  }
+
+  // 2. Tenta recuperar da RAM pelo ID simples
+  if (mensagensArmazenadasStore.has(id)) {
+    return mensagensArmazenadasStore.get(id);
+  }
+
+  // 3. Se não achou na RAM, busca no SQLite persistente
+  try {
+    const db = getDb();
+    const row: any = db.prepare("SELECT message_json FROM bot_mensagens_cache WHERE id = ?").get(id);
+    if (row?.message_json) {
+      const parsed = JSON.parse(row.message_json);
+      mensagensArmazenadasStore.set(id, parsed);
+      return parsed;
+    }
+  } catch (e) {}
+
+  return undefined;
+}
+
 // Cache em memória de conversas em atendimento humano (robô em pausa)
 const atendimentosHumanosCache = new Map<string, {
   numero: string;
@@ -74,7 +181,7 @@ function ehComandoReativarBot(texto: string): boolean {
   );
 }
 
-// Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência
+// Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência e retries
 async function enviarMensagemDoBot(jid: string, content: any) {
   if (!sock) return null;
   const sent = await sock.sendMessage(jid, content);
@@ -84,6 +191,10 @@ async function enviarMensagemDoBot(jid: string, content: any) {
       const first = mensagensEnviadasPeloRobo.values().next().value;
       if (first) mensagensEnviadasPeloRobo.delete(first);
     }
+
+    // Salva a mensagem enviada no cache para resposta imediata a retry de criptografia
+    const msgParaSalvar = sent.message || (content?.text ? { conversation: content.text } : content);
+    salvarMensagemNoCache(sent.key.id, sent.key.remoteJid || jid, msgParaSalvar);
   }
   return sent;
 }
@@ -564,7 +675,12 @@ export async function iniciarWhatsAppBot() {
 
     sock = makeWASocket({
       version,
-      auth: state,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
+      },
+      msgRetryCounterCache,
+      getMessage: recuperarMensagemDoCache,
       logger: pino({ level: "silent" }),
       printQRInTerminal: false,
       defaultQueryTimeoutMs: 60000,
@@ -777,8 +893,11 @@ export async function iniciarWhatsAppBot() {
           // Ignorar reações, mensagens apagadas, recibos de leitura e protocolos
           if (msg.message.protocolMessage || msg.message.reactionMessage) continue;
 
-          // 2. DEDUPLICAÇÃO ABSOLUTA: Toda mensagem do WhatsApp possui um ID único exclusivo (msg.key.id)
+          // 2. DEDUPLICAÇÃO ABSOLUTA & REGISTRO NO CACHE DE CRIPTOGRAFIA
           const msgId = msg.key.id;
+          if (msgId && msg.message) {
+            salvarMensagemNoCache(msgId, msg.key.remoteJid, msg.message);
+          }
           if (!msgId || mensagensProcessadas.has(msgId)) continue;
           mensagensProcessadas.add(msgId);
 
