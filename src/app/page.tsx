@@ -1236,10 +1236,15 @@ export default function Dashboard() {
                 </h1>
                 <Edit className="w-3.5 h-3.5 text-zinc-500 group-hover/title:text-amber-400 opacity-60 group-hover/title:opacity-100 transition flex-shrink-0" />
               </div>
-              <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold mt-0.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                SQLite Local Ativo
-              </span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  SQLite Local Ativo
+                </span>
+                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide">
+                  v1.2.0 • Teste OK
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1470,9 +1475,9 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setModalNovoMensalista(true)}
-                  className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition shadow-lg shadow-amber-500/10"
+                  className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black px-4 py-2.5 rounded-xl font-extrabold text-sm flex items-center gap-2 transition shadow-lg shadow-emerald-500/20 active:scale-95"
                 >
-                  <Plus className="w-4 h-4" /> Novo Cliente VIP
+                  <Sparkles className="w-4 h-4" /> Novo Cliente VIP
                 </button>
               </div>
             </div>

@@ -35,10 +35,21 @@ export async function GET() {
       commitLocal = await runGit('git rev-parse --short HEAD');
       dataCommit = await runGit('git log -1 --format=%cd --date=format:"%d/%m/%Y %H:%M"');
     } catch {
-      return NextResponse.json({
-        configurado: false,
-        mensagem: 'Repositório Git local não inicializado ou sem commits.',
-      });
+      // Repositório local ainda não inicializado. Se o Git estiver instalado na máquina, inicializa automaticamente
+      try {
+        await runGit('git init');
+        await runGit('git remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git');
+        await runGit('git fetch origin main --quiet');
+        await runGit('git branch -M main');
+        await runGit('git reset --mixed origin/main');
+        commitLocal = await runGit('git rev-parse --short HEAD');
+        dataCommit = await runGit('git log -1 --format=%cd --date=format:"%d/%m/%Y %H:%M"');
+      } catch (autoInitErr) {
+        return NextResponse.json({
+          configurado: false,
+          mensagem: 'Git não instalado neste notebook ou repositório não inicializado.',
+        });
+      }
     }
 
     // 2. Verifica se tem remote configurado

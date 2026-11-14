@@ -25,15 +25,24 @@ if exist "E:\node.exe" (
 where git >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [*] Verificando atualizacoes no GitHub...
+    if not exist ".git" (
+        echo [*] Conectando este notebook a central de atualizacoes...
+        git init >nul 2>&1
+        git remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git >nul 2>&1
+        git fetch origin main --quiet >nul 2>&1
+        git branch -M main >nul 2>&1
+        git reset --mixed origin/main >nul 2>&1
+    )
     git fetch origin main --quiet >nul 2>&1
     for /f %%i in ('git rev-list --count HEAD..origin/main 2^>nul') do (
         if "%%i" neq "0" (
             if "%%i" neq "" (
                 echo.
-                echo [+] Atualizando sistema do GitHub...
+                echo [+] Atualizando sistema do GitHub (%%i melhorias novas)...
+                for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
                 git pull origin main
                 call "%NODE_CMD%" node_modules\next\dist\bin\next build
-                echo [OK] Sistema atualizado!
+                echo [OK] Sistema atualizado com sucesso!
             )
         )
     )
