@@ -1,0 +1,36 @@
+{
+  "name": "chatbot-mensalistas-app",
+  "version": "1.0.0",
+  "description": "Sistema local para barbearia: Atendimento WhatsApp, Controle de Mensalistas e Integracao Booksy",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3000 -H 0.0.0.0",
+    "build": "next build",
+    "start": "next start -p 3000 -H 0.0.0.0"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
+    "clsx": "^2.1.1",
+    "link-preview-js": "^3.2.0",
+    "lucide-react": "^0.468.0",
+    "next": "^15.1.0",
+    "pino": "^9.6.0",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sql.js": "^1.12.0",
+    "tailwind-merge": "^2.5.5",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/sql.js": "^1.4.9",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2"
+  }
+}

@@ -1,0 +1,87 @@
+================================================================================
+CHECKLIST DE PREPARACAO DO NOTEBOOK DO CLIENTE
+SISTEMA: ChatBot_MensalistasAPP
+================================================================================
+
+--------------------------------------------------------------------------------
+OPCAO A: SE FOR INSTALAR WINDOWS (Windows 10 64 bits)
+--------------------------------------------------------------------------------
+1. OTIMIZACAO PARA PC FRACO:
+   [ ] Se o notebook for muito fraco, use Windows 10 LTSC / Tiny10.
+   [ ] Ctrl + Shift + Esc -> aba "Inicializar" -> Desabilitar tudo que nao for essencial.
+   [ ] Painel de Controle -> Opcoes de Energia -> Plano "Alto Desempenho".
+       - "Suspender atividade": NUNCA (conectado na tomada).
+       - "Acao ao fechar a tampa": NADA A FAZER.
+
+2. LINKS DE DOWNLOAD (WINDOWS):
+   [ ] Node.js LTS (v20 ou v22): https://nodejs.org/en/download/
+   [ ] Git for Windows: https://git-scm.com/download/win
+   [ ] Google Chrome: https://www.google.com/intl/pt-BR/chrome/
+
+3. INICIALIZACAO AUTOMATICA (WINDOWS):
+   [ ] Abrir CMD/PowerShell como Administrador:
+       npm install -g pm2
+       npm install -g pm2-windows-startup
+       pm2-startup install
+       pm2 start server.js --name "barbearia-app"
+       pm2 save
+   [ ] Atalho Modo App na Area de Trabalho:
+       chrome.exe --app="http://localhost:3000"
+
+
+--------------------------------------------------------------------------------
+OPCAO B: SE FOR INSTALAR LINUX (UBUNTU / LUBUNTU / MINT) - [RECOMENDADO SE FOR MUITO FRACO]
+--------------------------------------------------------------------------------
+Dica de Distro:
+- Ubuntu normal se o note tiver 4GB+ de RAM.
+- Lubuntu ou Linux Mint XFCE se tiver 2GB a 4GB de RAM (consome so 500MB de RAM!).
+
+1. INSTALACAO DOS PROGRAMAS NO LINUX (Basta colar no Terminal):
+   [ ] Atualizar o sistema e instalar Node.js 20 LTS + Git + Chrome:
+       sudo apt update && sudo apt upgrade -y
+       sudo apt install -y curl git
+       curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+       sudo apt install -y nodejs
+       
+   [ ] Instalar o Google Chrome:
+       wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+       sudo dpkg -i google-chrome-stable_current_amd64.deb
+       sudo apt -f install -y
+
+2. INICIALIZACAO AUTOMATICA NO LINUX COM SYSTEMD:
+   [ ] Instalar e configurar PM2 para iniciar com o sistema:
+       sudo npm install -g pm2
+       pm2 startup systemd
+       (Copie e cole o comando que o terminal pedir)
+       pm2 start npm --name "barbearia-app" -- start
+       pm2 save
+
+3. ATALHO NA AREA DE TRABALHO DO LINUX (Modo Janela/App):
+   [ ] Criar um arquivo na pasta ~/Desktop/barbearia.desktop:
+       [Desktop Entry]
+       Name=Painel Barbearia
+       Exec=google-chrome --app=http://localhost:3000
+       Icon=google-chrome
+       Terminal=false
+       Type=Application
+   [ ] Clicar com botao direito nele -> "Permitir execucao / Allow Launching".
+
+4. CONFIGURACAO DE ENERGIA DO LINUX:
+   [ ] Em Configuracoes -> Energia:
+       - Definir "Suspender quando inativo": DESATIVADO.
+       - "Quando fechar a tampa": Nao suspender.
+
+
+--------------------------------------------------------------------------------
+COMUM PARA AMBOS (REDE E WHATSAPP)
+--------------------------------------------------------------------------------
+[ ] Conectar o notebook no Wi-Fi da barbearia (de preferencia IP Fixo, ex: 192.168.1.50).
+    - Barbeiro pode acessar pelo celular no mesmo Wi-Fi digitando: http://192.168.1.50:3000
+[ ] Banco SQLite:
+    - Nao precisa instalar nada de banco (sem MySQL, sem Postgres).
+    - Fica em um arquivo leve (.db) dentro da propria pasta.
+[ ] Conectar o WhatsApp:
+    - Abrir o sistema no navegador.
+    - Ler o QR Code com o WhatsApp da barbearia (Aparelhos Conectados).
+    - Sessao salva localmente, sem custos mensais de API.
+================================================================================

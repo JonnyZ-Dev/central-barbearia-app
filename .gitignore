@@ -1,0 +1,37 @@
+# Dependências
+node_modules/
+/.pnp
+.pnp.js
+
+# Build & Cache Next.js
+.next/
+out/
+build/
+dist/
+
+# Banco de Dados Local do Cliente (PROTEÇÃO MÁXIMA - CADA CLIENTE TEM O SEU)
+database/barbearia.db
+database/barbearia.db-shm
+database/barbearia.db-wal
+database/*.db
+database/*.db-shm
+database/*.db-wal
+
+# Sessão WhatsApp Baileys do Cliente (PROTEÇÃO MÁXIMA - CADA NOTEBOOK TEM O SEU QR CODE)
+database/auth_info_baileys/
+database/auth_info_baileys/*
+
+# Logs e arquivos de desenvolvimento / temporários
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+scratch/
+*.log
+
+# Variáveis de ambiente locais
+.env*.local
+
+# Arquivos do sistema operacional
+Thumbs.db
+.DS_Store

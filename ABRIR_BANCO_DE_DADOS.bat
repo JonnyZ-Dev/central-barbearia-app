@@ -1,0 +1,3 @@
+@echo off
+title Abrindo Banco de Dados da Barbearia GM...
+start "" "C:\Program Files\DB Browser for SQLite\DB Browser for SQLite.exe" "%~dp0database\barbearia.db"
