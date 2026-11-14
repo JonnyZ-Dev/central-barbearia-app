@@ -1,87 +1,112 @@
 ================================================================================
-CHECKLIST DE PREPARACAO DO NOTEBOOK DO CLIENTE
-SISTEMA: ChatBot_MensalistasAPP
+GUIA MESTRE DE IMPLANTAÇÃO E OPERAÇÃO NO NOTEBOOK DO CLIENTE (R$ 0,00)
+SISTEMA: Central Barbearia VIP & Robô WhatsApp
 ================================================================================
 
+PARTE 1: O QUE COLOCAR NO SEU PEN DRIVE
 --------------------------------------------------------------------------------
-OPCAO A: SE FOR INSTALAR WINDOWS (Windows 10 64 bits)
---------------------------------------------------------------------------------
-1. OTIMIZACAO PARA PC FRACO:
-   [ ] Se o notebook for muito fraco, use Windows 10 LTSC / Tiny10.
-   [ ] Ctrl + Shift + Esc -> aba "Inicializar" -> Desabilitar tudo que nao for essencial.
-   [ ] Painel de Controle -> Opcoes de Energia -> Plano "Alto Desempenho".
-       - "Suspender atividade": NUNCA (conectado na tomada).
-       - "Acao ao fechar a tampa": NADA A FAZER.
-
-2. LINKS DE DOWNLOAD (WINDOWS):
-   [ ] Node.js LTS (v20 ou v22): https://nodejs.org/en/download/
-   [ ] Git for Windows: https://git-scm.com/download/win
-   [ ] Google Chrome: https://www.google.com/intl/pt-BR/chrome/
-
-3. INICIALIZACAO AUTOMATICA (WINDOWS):
-   [ ] Abrir CMD/PowerShell como Administrador:
-       npm install -g pm2
-       npm install -g pm2-windows-startup
-       pm2-startup install
-       pm2 start server.js --name "barbearia-app"
-       pm2 save
-   [ ] Atalho Modo App na Area de Trabalho:
-       chrome.exe --app="http://localhost:3000"
-
+No seu Pen Drive, você precisa ter:
+1. A pasta do sistema (criada pelo utilitário CRIAR_PACOTE_NOVA_BARBEARIA.bat ou a pasta atual).
+   - Ela já contém todo o código compilado (.next) e as dependências (node_modules).
+2. Instalador do Node.js LTS (v20 ou v22):
+   - Baixe o instalador oficial do Windows (.msi) em: https://nodejs.org/
+   - Salve no Pen Drive para instalar em notebooks que não tenham Node.js instalado.
+3. Instalador do Git for Windows (opcional, para receber atualizações do GitHub):
+   - Baixe em: https://git-scm.com/download/win
 
 --------------------------------------------------------------------------------
-OPCAO B: SE FOR INSTALAR LINUX (UBUNTU / LUBUNTU / MINT) - [RECOMENDADO SE FOR MUITO FRACO]
+PARTE 2: INSTALAÇÃO EM 1 CLIQUE NO NOTEBOOK DO CLIENTE
 --------------------------------------------------------------------------------
-Dica de Distro:
-- Ubuntu normal se o note tiver 4GB+ de RAM.
-- Lubuntu ou Linux Mint XFCE se tiver 2GB a 4GB de RAM (consome so 500MB de RAM!).
-
-1. INSTALACAO DOS PROGRAMAS NO LINUX (Basta colar no Terminal):
-   [ ] Atualizar o sistema e instalar Node.js 20 LTS + Git + Chrome:
-       sudo apt update && sudo apt upgrade -y
-       sudo apt install -y curl git
-       curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-       sudo apt install -y nodejs
-       
-   [ ] Instalar o Google Chrome:
-       wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-       sudo dpkg -i google-chrome-stable_current_amd64.deb
-       sudo apt -f install -y
-
-2. INICIALIZACAO AUTOMATICA NO LINUX COM SYSTEMD:
-   [ ] Instalar e configurar PM2 para iniciar com o sistema:
-       sudo npm install -g pm2
-       pm2 startup systemd
-       (Copie e cole o comando que o terminal pedir)
-       pm2 start npm --name "barbearia-app" -- start
-       pm2 save
-
-3. ATALHO NA AREA DE TRABALHO DO LINUX (Modo Janela/App):
-   [ ] Criar um arquivo na pasta ~/Desktop/barbearia.desktop:
-       [Desktop Entry]
-       Name=Painel Barbearia
-       Exec=google-chrome --app=http://localhost:3000
-       Icon=google-chrome
-       Terminal=false
-       Type=Application
-   [ ] Clicar com botao direito nele -> "Permitir execucao / Allow Launching".
-
-4. CONFIGURACAO DE ENERGIA DO LINUX:
-   [ ] Em Configuracoes -> Energia:
-       - Definir "Suspender quando inativo": DESATIVADO.
-       - "Quando fechar a tampa": Nao suspender.
-
+1. Conecte o Pen Drive no notebook do cliente.
+2. Se o notebook não tiver Node.js instalado:
+   - Dê 2 cliques no instalador do Node.js e avance clicando em "Next > Next > Install".
+3. Na pasta do sistema no Pen Drive:
+   - Clique com o BOTAO DIREITO no arquivo:
+     "1_INSTALAR_NO_CLIENTE.bat"
+   - Escolha: "Executar como Administrador".
+4. O script faz TUDO sozinho:
+   [+] Copia os arquivos do Pen Drive direto para "C:\BarbeariaApp".
+   [+] Libera a porta 3000 no Firewall do Windows (para os celulares acessarem).
+   [+] Cria o atalho "Barbearia VIP" na Área de Trabalho.
+   [+] Configura o sistema para iniciar sozinho quando o Windows ligar.
+   [+] Abre o sistema imediatamente na tela!
 
 --------------------------------------------------------------------------------
-COMUM PARA AMBOS (REDE E WHATSAPP)
+PARTE 3: COMO FICA A REDE E ACESSO PELOS CELULARES (OUTRO WI-FI)
 --------------------------------------------------------------------------------
-[ ] Conectar o notebook no Wi-Fi da barbearia (de preferencia IP Fixo, ex: 192.168.1.50).
-    - Barbeiro pode acessar pelo celular no mesmo Wi-Fi digitando: http://192.168.1.50:3000
-[ ] Banco SQLite:
-    - Nao precisa instalar nada de banco (sem MySQL, sem Postgres).
-    - Fica em um arquivo leve (.db) dentro da propria pasta.
-[ ] Conectar o WhatsApp:
-    - Abrir o sistema no navegador.
-    - Ler o QR Code com o WhatsApp da barbearia (Aparelhos Conectados).
-    - Sessao salva localmente, sem custos mensais de API.
+1. Conecte o notebook no Wi-Fi da barbearia do cliente.
+2. O sistema roda em "0.0.0.0:3000", ou seja, ele escuta qualquer conexão vinda do Wi-Fi.
+3. No próprio notebook:
+   - O painel abre sempre em: http://localhost:3000 (não depende do IP da rede).
+4. Nos celulares dos barbeiros e recepção (conectados no mesmo Wi-Fi):
+   - No rodapé do menu lateral do painel, o sistema agora mostra automaticamente:
+     "📱 Acesso no Celular: http://192.168.X.X:3000" com botão [Copiar].
+   - Basta o barbeiro abrir esse endereço no Safari (iPhone) ou Chrome (Android).
+   - O barbeiro pode clicar em "Adicionar à Tela de Início" no navegador do celular,
+     ficando com um ícone de aplicativo nativo na tela do celular dele!
+
+--------------------------------------------------------------------------------
+PARTE 4: CONFIGURAÇÃO DO WINDOWS 10 PARA LIGAR E INICIAR SOZINHO (APÓS QUEDA DE ENERGIA)
+--------------------------------------------------------------------------------
+Passo A: Fazer o Notebook LIGAR SOZINHO quando a energia voltar (BIOS/UEFI):
+1. Ligue o notebook e fique apertando F2, Del, F10 ou F12 (depende da marca do notebook)
+   para entrar na tela da BIOS.
+2. Vá na aba "Power", "Advanced" ou "Power Management Setup".
+3. Procure por:
+   - "AC Power Recovery", "Restore on AC Power Loss", ou "State After G3".
+4. Altere de [Power Off] para [Power On] ou [Last State].
+5. Pressione F10 para Salvar e Reiniciar.
+* Nota: Isso faz a placa-mãe ligar automaticamente assim que a tomada receber energia!
+
+Passo B: Fazer o Windows ENTRAR DIRETO sem parar na tela de senha:
+1. No Windows 10, aperte no teclado: Windows + R.
+2. Digite: netplwiz e aperte Enter.
+3. DESMARQUE a caixinha:
+   "Os usuários devem digitar um nome de usuário e uma senha para usar este computador".
+4. Clique em "Aplicar", digite a senha atual do Windows duas vezes e clique em OK.
+* Pronto! O Windows liga e vai direto para a Área de Trabalho sem ninguém tocar no teclado.
+
+Passo C: Não desligar ou suspender se fechar a tampa:
+1. Abra o Painel de Controle -> Opções de Energia.
+2. No menu da esquerda, clique em: "Escolher a função do fechamento da tampa".
+3. Na opção "Quando eu fechar a tampa" (Conectado à tomada):
+   - Mude para: "NADA A FAZER".
+4. Na opção "Suspender atividade do computador":
+   - Mude para: "NUNCA".
+5. Clique em "Salvar alterações".
+* Agora o notebook pode ficar com a tela fechada num cantinho ligado 24h sem desligar!
+
+Passo D: Subir o sistema automaticamente:
+- O arquivo "1_INSTALAR_NO_CLIENTE.bat" já adiciona o atalho do sistema na pasta
+  de inicialização do Windows (shell:startup).
+- Assim que o Windows entrar na Área de Trabalho, ele inicia o servidor, reconecta o
+  WhatsApp e abre a janela do aplicativo sozinho!
+
+--------------------------------------------------------------------------------
+PARTE 5: COMO REPLICAR PARA UMA SEGUNDA BARBEARIA (NOVO CLIENTE SAAS)
+--------------------------------------------------------------------------------
+1. No Supabase (https://supabase.com):
+   - Abra a tabela "licencas" e clique em "Insert row".
+   - Chave: Crie uma chave nova (ex: LIC-BARBEARIA2-2026).
+   - Cliente: Nome da nova barbearia (ex: Barbearia do Rodrigo).
+   - Status: ATIVO.
+   - Vencimento: Data do próximo mês (ex: 2026-12-15).
+   - Valor: 150.00.
+   - Pix: Sua chave Pix para receber a mensalidade.
+2. No seu computador:
+   - Dê 2 cliques no arquivo: "CRIAR_PACOTE_NOVA_BARBEARIA.bat".
+   - Digite o nome da barbearia e a chave que você criou no Supabase.
+   - Ele cria uma pasta limpa (sem clientes e sem histórico da barbearia anterior).
+3. No notebook do novo cliente:
+   - Conecte o Pen Drive e rode "1_INSTALAR_NO_CLIENTE.bat" como Administrador.
+   - Escaneie o QR Code do WhatsApp do novo cliente.
+   - Cadastre os serviços e barbeiros dele pelo painel.
+   - Pronto! Nova barbearia faturando todo mês!
+
+--------------------------------------------------------------------------------
+PARTE 6: BACKUP DE SEGURANÇA
+--------------------------------------------------------------------------------
+- Sempre que quiser fazer um backup rápido do banco da GM ou de qualquer cliente:
+  Dê 2 cliques em "FAZER_BACKUP.bat".
+- O backup fica salvo com data e hora na pasta "backups/".
 ================================================================================

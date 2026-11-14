@@ -23,6 +23,9 @@ export interface InfoLicenca {
 }
 
 export function obterChaveLicenca(): string {
+  if (process.env.CHAVE_LICENCA && process.env.CHAVE_LICENCA.trim()) {
+    return process.env.CHAVE_LICENCA.trim();
+  }
   try {
     const db = getDb();
     const cfg: any = db.prepare("SELECT chave_licenca FROM configuracoes WHERE id = 'default'").get();

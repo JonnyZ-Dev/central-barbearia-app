@@ -1357,6 +1357,34 @@ export default function Dashboard() {
             </button>
           </div>
 
+          {/* Card de Acesso Wi-Fi / Celular na Barbearia */}
+          {data?.rede?.ipLocal && data.rede.ipLocal !== "localhost" && (
+            <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-xs space-y-1">
+              <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                <span className="font-bold flex items-center gap-1.5 text-zinc-300">
+                  <Phone className="w-3 h-3 text-amber-400" /> Acesso no Celular
+                </span>
+                <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-mono">Mesmo Wi-Fi</span>
+              </div>
+              <div className="flex items-center justify-between gap-1 pt-0.5">
+                <span className="text-[11px] font-mono font-bold text-amber-400 truncate select-all">
+                  {data.rede.urlAcessoCelular}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(data.rede.urlAcessoCelular);
+                    mostrarFeedback("Link de acesso móvel copiado!", "success");
+                  }}
+                  className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] font-bold transition"
+                  title="Copiar Link para o Celular"
+                >
+                  Copiar
+                </button>
+              </div>
+            </div>
+          )}
+
 
         </div>
       </aside>

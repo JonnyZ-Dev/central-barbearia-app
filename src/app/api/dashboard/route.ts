@@ -1,5 +1,21 @@
 import { NextResponse } from "next/server";
-import { getDb, popularDadosIniciaisGM } from "@/lib/db";
+import { getDb } from "@/lib/db";
+import os from "os";
+import path from "path";
+
+function getLocalIp(): string {
+  try {
+    const nets = os.networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] || []) {
+        if (net.family === "IPv4" && !net.internal) {
+          return net.address;
+        }
+      }
+    }
+  } catch {}
+  return "localhost";
+}
 
 export async function GET() {
   try {
@@ -39,6 +55,8 @@ export async function GET() {
     const tabelasRows: any[] = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';").all() || [];
     const tabelas = tabelasRows.map(r => r.name);
 
+    const ipLocal = getLocalIp();
+
     return NextResponse.json({
       config,
       mensalistas,
@@ -46,28 +64,19 @@ export async function GET() {
       servicos,
       barbeiros,
       planos,
+      rede: {
+        ipLocal,
+        porta: 3000,
+        urlAcessoCelular: `http://${ipLocal}:3000`
+      },
       banco: {
         tabelas,
-        caminho: "E:\\ChatBot_MensalistasAPP\\database\\barbearia.db",
+        caminho: path.join(process.cwd(), "database", "barbearia.db"),
         driver: "Node.js Native SQLite (node:sqlite)"
       }
     });
   } catch (error: any) {
     console.error("ERRO GET /api/dashboard:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-export async function POST(req: Request) {
-  try {
-    const { acao } = await req.json();
-    if (acao === "RESETAR_DADOS_GM") {
-      const db = getDb();
-      popularDadosIniciaisGM(db);
-      return NextResponse.json({ success: true, message: "Dados da GM Barbershop importados com sucesso!" });
-    }
-    return NextResponse.json({ error: "Ação não reconhecida" }, { status: 400 });
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }

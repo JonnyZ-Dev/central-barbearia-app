@@ -21,6 +21,10 @@ database/*.db-wal
 database/auth_info_baileys/
 database/auth_info_baileys/*
 
+# Backups locais
+backups/
+backups/*
+
 # Logs e arquivos de desenvolvimento / temporários
 npm-debug.log*
 yarn-debug.log*
