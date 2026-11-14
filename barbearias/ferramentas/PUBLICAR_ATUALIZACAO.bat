@@ -10,14 +10,15 @@ echo Toda alteracao que voce enviar aqui sera recebida
 echo automaticamente por todos os notebooks das barbearias!
 echo.
 
-cd /d "%~dp0"
-set "PATH=C:\Program Files\Git\cmd;E:\;C:\Program Files\nodejs;%PATH%"
+:: Vai para a raiz do codigo fonte (E:\ChatBot_MensalistasAPP)
+cd /d "%~dp0\..\.."
+set "PATH=C:\Program Files\Git\cmd;E:\;C:\Program Files\nodejs;" + %PATH%
 
 set /p DESCRICAO="Descreva o que foi alterado (ou aperte Enter para padrao): "
 if "%DESCRICAO%"=="" set "DESCRICAO=melhorias gerais no sistema"
 
 echo.
-echo [*] Adicionando arquivos modificados...
+echo [*] Adicionando arquivos modificados no codigo fonte...
 git add .
 
 echo [*] Criando versao da atualizacao...

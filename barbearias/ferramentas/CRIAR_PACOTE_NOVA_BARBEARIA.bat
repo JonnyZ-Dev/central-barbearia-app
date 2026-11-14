@@ -23,12 +23,15 @@ if "%PASTA_SAIDA%"=="" (
     exit /b
 )
 
+:: Raiz do codigo fonte
+set "ROOT=%~dp0\..\.."
+
 echo.
 echo [*] Criando pasta de saida em: %PASTA_SAIDA%...
 if not exist "%PASTA_SAIDA%" mkdir "%PASTA_SAIDA%"
 
-echo [*] Copiando arquivos do sistema (pode levar 1 a 2 minutos)...
-robocopy "%~dp0." "%PASTA_SAIDA%" /E /XD "%~dp0database" "%~dp0backups" "%~dp0scratch" "%~dp0.git" /XF "%~dp0database\barbearia.db" "%~dp0.env.local" >nul
+echo [*] Copiando arquivos do sistema (aguarde 1 minuto)...
+robocopy "%ROOT%" "%PASTA_SAIDA%" /E /XD "%ROOT%\database" "%ROOT%\backups" "%ROOT%\scratch" "%ROOT%\.git" "%ROOT%\barbearias" /XF "%ROOT%\database\barbearia.db" "%ROOT%\.env.local" >nul
 
 echo [*] Criando pasta database limpa...
 if not exist "%PASTA_SAIDA%\database" mkdir "%PASTA_SAIDA%\database"

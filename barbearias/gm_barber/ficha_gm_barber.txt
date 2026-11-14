@@ -1,0 +1,23 @@
+================================================================================
+FICHA DO CLIENTE 01: GM BARBERSHOP
+================================================================================
+Cliente: GM Barbershop
+Chave de Licenca: LIC-GM-BARBERSHOP-2026
+Status: ATIVO
+Mensalidade: R$ 150,00/mes
+Chave Pix de Cobranca: 11987602646
+Vencimento Mensal: Dia 15
+
+RESPONSAVEIS / CONTATOS:
+- Dono: GM
+- WhatsApp do Salao: (11) 96012-9564
+- AnyDesk ID: (Anotar aqui o ID do notebook)
+- Senha de Acesso do AnyDesk: (Anotar aqui)
+
+DADOS TECNICOS:
+- Computador: Notebook Lenovo ThinkPad
+- Sistema Operacional: Windows 10
+- IP Local no Wi-Fi: Exibido no rodape do painel da barbearia
+- Banco de Dados SQLite: Local no notebook
+- Conexao WhatsApp Baileys: Autenticado e conectado no numero do salao
+================================================================================
