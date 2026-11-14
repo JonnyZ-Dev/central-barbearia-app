@@ -11,10 +11,7 @@ cd /d "%~dp0"
 
 :: Detectar Node.js
 set "NODE_CMD=node"
-if exist "E:\node.exe" (
-    set "NODE_CMD=E:\node.exe"
-    set "PATH=C:\Program Files\Git\cmd;E:\;C:\Program Files\nodejs;%PATH%"
-) else if exist "C:\Program Files\nodejs\node.exe" (
+if exist "C:\Program Files\nodejs\node.exe" (
     set "NODE_CMD=C:\Program Files\nodejs\node.exe"
     set "PATH=C:\Program Files\Git\cmd;C:\Program Files\nodejs;%PATH%"
 ) else (
@@ -48,14 +45,14 @@ if %ERRORLEVEL% EQU 0 (
     )
 )
 
-:: 2. Verificar se o servidor ja esta rodando na porta 3000
-netstat -ano | findstr :3000 >nul 2>&1
+:: 2. Verificar se o servidor ja esta rodando na porta 3000 (ouvindo conexoes)
+netstat -ano | findstr :3000 | findstr LISTENING >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
     echo [OK] O servidor ja esta em execucao!
 ) else (
     echo [*] Iniciando servidor de producao local...
     start "Barbearia_Server" /min "%NODE_CMD%" node_modules\next\dist\bin\next start -p 3000 -H 0.0.0.0
-    ping 127.0.0.1 -n 4 >nul
+    ping 127.0.0.1 -n 5 >nul
 )
 
 :: 3. Dispara reconexao automatica do WhatsApp caso haja sessao salva
