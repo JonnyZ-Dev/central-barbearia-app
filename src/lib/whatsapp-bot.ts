@@ -19,7 +19,24 @@ let isConnecting = false;
 
 // Controle de concorrência e deduplicação absoluta de mensagens (anti-spam / anti-loop)
 const mensagensProcessadas = new Set<string>();
-const chatsEmAtendimento = new Set<string>();
+
+interface MensagemBufferizada {
+  texto: string;
+  ehAudio: boolean;
+  ehImagem: boolean;
+  pushName?: string;
+  senderPn?: string;
+  participantPn?: string;
+}
+
+interface ChatBufferState {
+  mensagens: MensagemBufferizada[];
+  timer: NodeJS.Timeout | null;
+  processando: boolean;
+}
+
+// Fila e buffer inteligente com debounce por chat (agrupa mensagens consecutivas e nunca descarta)
+const chatBuffers = new Map<string, ChatBufferState>();
 
 // Cache em memória para resolução instantânea de LID para Telefone real
 const lidToPhoneMap = new Map<string, string>();
@@ -422,6 +439,80 @@ export async function processarAvisosRenovacaoAutomatica() {
   }
 }
 
+/**
+ * Dispara o processamento consolidado de mensagens acumuladas no buffer de um chat
+ * Garante que mensagens consecutivas rápidas sejam agrupadas e NUNCA perdidas
+ */
+async function dispararProcessamentoChat(remoteJid: string) {
+  const chatState = chatBuffers.get(remoteJid);
+  if (!chatState || chatState.mensagens.length === 0 || chatState.processando) return;
+
+  // Se o robô estiver pausado globalmente
+  if (isRoboPausado()) {
+    chatState.mensagens = [];
+    console.log(`[ROBÔ PAUSADO GLOBALMENTE] Buffer de ${remoteJid} descartado enquanto robô em pausa.`);
+    return;
+  }
+
+  // Se o atendimento humano estiver ativo para esta conversa
+  if (verificarAtendimentoHumanoAtivo(remoteJid)) {
+    const temComandoReativar = chatState.mensagens.some(m => 
+      m.texto === "#bot" || m.texto === "#menu" || m.texto === "#voltar"
+    );
+    if (!temComandoReativar) {
+      chatState.mensagens = [];
+      console.log(`[ROBÔ SILENCIADO] Atendimento humano ativo para ${remoteJid}. Mensagens acumuladas não dispararão o robô.`);
+      return;
+    }
+    removerPausaAtendimentoHumano(remoteJid);
+    console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando!`);
+  }
+
+  chatState.processando = true;
+
+  try {
+    const lote = [...chatState.mensagens];
+    chatState.mensagens = [];
+
+    // Junta todo o texto das mensagens consecutivas (ex: "oi" + "não vou conseguir ir às 9")
+    const textoConsolidado = lote
+      .map(m => m.texto)
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    const temAudio = lote.some(m => m.ehAudio);
+    const temImagem = lote.some(m => m.ehImagem);
+    const ultimo = lote[lote.length - 1];
+
+    const numeroLimpo = remoteJid.replace(/[^0-9]/g, "");
+    const extraInfo = {
+      senderPn: ultimo?.senderPn,
+      participantPn: ultimo?.participantPn,
+      pushName: ultimo?.pushName,
+      ehAudio: temAudio,
+      ehImagem: temImagem
+    };
+
+    console.log(`[BOT PROCESSAR] Lote de ${lote.length} mensagem(ns) de ${remoteJid}: '${textoConsolidado}' (Áudio: ${temAudio}, Imagem: ${temImagem})`);
+
+    await processarMensagemRobo(remoteJid, numeroLimpo, textoConsolidado, extraInfo);
+  } catch (err) {
+    console.error(`[BOT ERRO] Erro ao processar chat ${remoteJid}:`, err);
+  } finally {
+    chatState.processando = false;
+
+    // Se o cliente mandou novas mensagens enquanto o robô digitava ou enviava:
+    if (chatState.mensagens.length > 0) {
+      console.log(`[BOT FILA] ${chatState.mensagens.length} mensagem(ns) acumuladas para ${remoteJid}. Agendando próximo envio...`);
+      chatState.timer = setTimeout(async () => {
+        chatState.timer = null;
+        await dispararProcessamentoChat(remoteJid);
+      }, 1500);
+    }
+  }
+}
+
 export async function iniciarWhatsAppBot() {
   if (sock && connectionStatus === "CONECTADO") {
     return { status: connectionStatus, qr: currentQr, numero: connectedNumber, pausado: isRoboPausado() };
@@ -714,48 +805,64 @@ export async function iniciarWhatsAppBot() {
             }
           }
 
-          // 4. TRAVA DE CHAT (evita que múltiplas mensagens quase simultâneas disparem 4 vezes)
-          if (chatsEmAtendimento.has(remoteJid)) continue;
-          chatsEmAtendimento.add(remoteJid);
-
-          try {
-            // 4. Ignorar mensagens antigas de sincronização de histórico (> 90 segundos)
-            const timestampMsg = Number(msg.messageTimestamp) * 1000;
-            if (timestampMsg && Date.now() - timestampMsg > 90000) {
-              continue;
-            }
-
-            // 5. Simular tempo humano de reação antes de ler (1.0s a 1.8s)
-            const delayReacao = 1000 + Math.random() * 800;
-            await new Promise(r => setTimeout(r, delayReacao));
-
-            // 6. Marcar mensagem como lida
-            try {
-              await sock.readMessages([msg.key]);
-            } catch (readErr) {}
-
-            const textoCliente = (
-              msg.message.conversation ||
-              msg.message.extendedTextMessage?.text ||
-              ""
-            ).trim().toLowerCase();
-
-            const numeroLimpo = remoteJid.replace(/[^0-9]/g, "");
-
-            const extraInfo = {
-              senderPn: (msg.key as any)?.senderPn,
-              participantPn: (msg.key as any)?.participantPn,
-              pushName: msg.pushName || (msg as any)?.verifiedBizName
-            };
-
-            // 7. Processar resposta do robô
-            await processarMensagemRobo(remoteJid, numeroLimpo, textoCliente, extraInfo);
-          } finally {
-            // Libera o chat após o atendimento com um intervalo de segurança de 2 segundos
-            setTimeout(() => {
-              chatsEmAtendimento.delete(remoteJid);
-            }, 2000);
+          // 4. Ignorar mensagens antigas de sincronização de histórico (> 90 segundos)
+          const timestampMsg = Number(msg.messageTimestamp) * 1000;
+          if (timestampMsg && Date.now() - timestampMsg > 90000) {
+            continue;
           }
+
+          // 5. Marcar mensagem como lida no WhatsApp imediatamente
+          try {
+            await sock.readMessages([msg.key]);
+          } catch (readErr) {}
+
+          // 6. Extrair se é áudio (PTT) ou mídia
+          const ehAudio = Boolean(
+            msg.message.audioMessage ||
+            (msg.message as any)?.ptvMessage
+          );
+          const ehImagem = Boolean(
+            msg.message.imageMessage ||
+            msg.message.videoMessage ||
+            msg.message.documentMessage
+          );
+
+          // 7. Enfileirar no buffer inteligente com debounce por chat
+          if (!chatBuffers.has(remoteJid)) {
+            chatBuffers.set(remoteJid, {
+              mensagens: [],
+              timer: null,
+              processando: false
+            });
+          }
+          const chatState = chatBuffers.get(remoteJid)!;
+
+          chatState.mensagens.push({
+            texto: textoCliente,
+            ehAudio,
+            ehImagem,
+            pushName: msg.pushName || (msg as any)?.verifiedBizName,
+            senderPn: (msg.key as any)?.senderPn,
+            participantPn: (msg.key as any)?.participantPn
+          });
+
+          // Se o robô já está ativamente enviando uma resposta para este chat:
+          // A nova mensagem fica guardada na fila e NUNCA é descartada!
+          if (chatState.processando) {
+            console.log(`[BOT FILA] Mensagem de ${remoteJid} adicionada à fila (robô ocupado respondendo)`);
+            continue;
+          }
+
+          // Se não está processando, reinicia a janela de debounce (2200ms)
+          // Isso junta frases consecutivas que o cliente envia rapidamente (ex: "oi" ... "não vou conseguir ir às 9")
+          if (chatState.timer) {
+            clearTimeout(chatState.timer);
+          }
+
+          chatState.timer = setTimeout(async () => {
+            chatState.timer = null;
+            await dispararProcessamentoChat(remoteJid);
+          }, 2200);
         } catch (err) {
           console.error("Erro ao processar mensagem do robô:", err);
         }
@@ -818,7 +925,7 @@ export async function desconectarBot() {
     sock = null;
   }
   mensagensProcessadas.clear();
-  chatsEmAtendimento.clear();
+  chatBuffers.clear();
   connectionStatus = "DESCONECTADO";
   currentQr = null;
   connectedNumber = null;
@@ -1026,7 +1133,13 @@ async function processarMensagemRobo(
   remoteJid: string,
   numeroLimpo: string,
   texto: string,
-  extraInfo?: { senderPn?: string; participantPn?: string; pushName?: string }
+  extraInfo?: {
+    senderPn?: string;
+    participantPn?: string;
+    pushName?: string;
+    ehAudio?: boolean;
+    ehImagem?: boolean;
+  }
 ) {
   const db = getDb();
 
@@ -1284,13 +1397,13 @@ async function processarMensagemRobo(
       // 1. Simular status "digitando..." (composing)
       await sock.sendPresenceUpdate("composing", remoteJid);
       
-      // 2. Tempo de digitação realista de uma pessoa humana no teclado (2.5 a 6.5 segundos com variação natural)
-      const tempoDigitacao = Math.min(6500, Math.max(2500, Math.round(textoFinal.length * 16 + (Math.random() * 1200 - 600))));
+      // 2. Tempo de digitação ágil e natural (1.2 a 3.5 segundos)
+      const tempoDigitacao = Math.min(3500, Math.max(1200, Math.round(textoFinal.length * 10 + (Math.random() * 600 - 300))));
       await new Promise(r => setTimeout(r, tempoDigitacao));
       
-      // 3. Pausa breve natural antes do envio (300ms a 600ms)
+      // 3. Pausa breve natural antes do envio (200ms a 400ms)
       await sock.sendPresenceUpdate("paused", remoteJid);
-      await new Promise(r => setTimeout(r, 400 + Math.random() * 300));
+      await new Promise(r => setTimeout(r, 200 + Math.random() * 200));
       
       // 4. Enviar mensagem
       await enviarMensagemDoBot(remoteJid, { text: textoFinal });
@@ -1302,6 +1415,57 @@ async function processarMensagemRobo(
   // =========================================================================
   // FLUXO DE ROTEAMENTO DINÂMICO E TREINAMENTO DE RESPOSTAS
   // =========================================================================
+
+  // SE O CLIENTE ENVIOU UM ÁUDIO:
+  // Nunca envia o menu! Reconhece o áudio, avisa que a equipe vai ouvir e ativa a pausa humana!
+  if (extraInfo?.ehAudio) {
+    const respostaAudio = preencherTemplate(
+      "msg_audio_recebido",
+      `Fala parceiro! Recebemos seu áudio! 🎧\n\nJá notifiquei nossa equipe na *{barbearia}*. Como nossos barbeiros podem estar em atendimento na cadeira agora, vamos ouvir seu áudio e te responder aqui em instantes! 💈\n\n📲 Se for sobre agendamento, você também pode marcar direto no Booksy sem fila:\n👉 *{link_booksy}*`
+    );
+    await enviarRespostaHumanizada(respostaAudio);
+    ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou áudio", extraInfo?.pushName, numeroLimpo);
+    return;
+  }
+
+  // SE O CLIENTE ENVIOU IMAGEM / COMPROVANTE (sem texto de comando):
+  if (extraInfo?.ehImagem && !texto) {
+    const respostaImagem = preencherTemplate(
+      "msg_imagem_recebida",
+      `Opa parceiro! Recebemos sua imagem / comprovante! 📸\n\nJá avisei nossa equipe aqui na *{barbearia}* para conferir. Em instantes confirmamos aqui para você! 💈`
+    );
+    await enviarRespostaHumanizada(respostaImagem);
+    ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou imagem / comprovante", extraInfo?.pushName, numeroLimpo);
+    return;
+  }
+
+  // CANCELAMENTO / REMARCAÇÃO / AVISO DE ATRASO DE HORÁRIO
+  if (
+    texto.includes("cancelar") ||
+    texto.includes("desmarcar") ||
+    texto.includes("remarcar") ||
+    texto.includes("trocar horario") ||
+    texto.includes("trocar horário") ||
+    texto.includes("mudar horario") ||
+    texto.includes("mudar horário") ||
+    texto.includes("nao vou conseguir") ||
+    texto.includes("não vou conseguir") ||
+    texto.includes("nao consigo ir") ||
+    texto.includes("não consigo ir") ||
+    texto.includes("nao poderei") ||
+    texto.includes("não poderei") ||
+    texto.includes("vou me atrasar") ||
+    texto.includes("atraso") ||
+    texto.includes("atrasar")
+  ) {
+    const resposta = preencherTemplate(
+      "msg_cancelamento_aviso",
+      `Tranquilo, *{cliente}*! Já avisamos a equipe da *{barbearia}* sobre o seu aviso de horário/cancelamento! 💈\n\nSe você agendou pelo Booksy, você também pode gerenciar ou reagendar facilmente por lá:\n👉 *{link_booksy}*\n\nEm instantes um dos nossos barbeiros vai confirmar com você aqui!`
+    );
+    await enviarRespostaHumanizada(resposta);
+    ativarPausaAtendimentoHumano(remoteJid, "Cliente avisou sobre horário / cancelamento", extraInfo?.pushName, numeroLimpo);
+    return;
+  }
 
   // 0. MENU PRINCIPAL (DISPARADO QUANDO O CLIENTE DIGITA "OI", "MENU", "VOLTAR", "0", ETC.)
   if (
@@ -1608,7 +1772,8 @@ async function processarMensagemRobo(
     "bom dia", "boa tarde", "boa noite", "menu", "início", "inicio", "voltar", 
     "voltar ao menu", "opcoes", "opções", "comecar", "começar", "#menu", "#bot"
   ];
-  const ehSaudacao = saudacoesPadrao.includes(texto) || texto === "";
+  // Não aceita texto vazio como saudação!
+  const ehSaudacao = saudacoesPadrao.includes(texto);
 
   if (ehSaudacao) {
     const resposta = preencherTemplate("msg_boas_vindas", "Fala parceiro! Bem-vindo à {barbearia}!\n1 - Agendar no Booksy: {link_booksy}");
@@ -1616,7 +1781,12 @@ async function processarMensagemRobo(
     return;
   }
 
-  // DEFAULT 2: SE NÃO É SAUDAÇÃO NEM OPÇÃO (CLIENTE ENVIOU DÚVIDA / MENSAGEM LIVRE OU ÁUDIO):
+  // Se o texto for vazio (sem áudio ou mídia), ignora silenciosamente
+  if (!texto) {
+    return;
+  }
+
+  // DEFAULT 2: SE NÃO É SAUDAÇÃO NEM OPÇÃO (CLIENTE ENVIOU DÚVIDA / MENSAGEM LIVRE):
   // Avisa que a equipe humana foi notificada e pausa o robô para não ficar spammando o menu!
   const respostaDuvida = preencherTemplate(
     "msg_duvida_humano",
