@@ -31,7 +31,7 @@ if %ERRORLEVEL% EQU 0 (
         git remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git >nul 2>&1
         git fetch origin main --quiet >nul 2>&1
         git branch -M main >nul 2>&1
-        git reset --mixed origin/main >nul 2>&1
+        git reset --hard origin/main >nul 2>&1
     )
     git fetch origin main --quiet >nul 2>&1
     for /f %%i in ('git rev-list --count HEAD..origin/main 2^>nul') do (

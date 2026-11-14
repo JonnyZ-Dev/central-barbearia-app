@@ -41,7 +41,7 @@ export async function GET() {
         await runGit('git remote add origin https://github.com/JonnyZ-Dev/central-barbearia-app.git');
         await runGit('git fetch origin main --quiet');
         await runGit('git branch -M main');
-        await runGit('git reset --mixed origin/main');
+        await runGit('git reset --hard origin/main');
         commitLocal = await runGit('git rev-parse --short HEAD');
         dataCommit = await runGit('git log -1 --format=%cd --date=format:"%d/%m/%Y %H:%M"');
       } catch (autoInitErr) {
