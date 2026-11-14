@@ -52,7 +52,16 @@ if %ERRORLEVEL% EQU 0 (
 ) else (
     echo [*] Iniciando servidor de producao local...
     start "Barbearia_Server" /min "%NODE_CMD%" node_modules\next\dist\bin\next start -p 3000 -H 0.0.0.0
-    ping 127.0.0.1 -n 5 >nul
+    echo [*] Aguardando servidor carregar na memoria...
+    set "WAIT_COUNT=0"
+    :loop_esperar_porta
+    set /a WAIT_COUNT+=1
+    ping 127.0.0.1 -n 2 >nul
+    netstat -ano | findstr :3000 | findstr LISTENING >nul 2>&1
+    if %ERRORLEVEL% NEQ 0 (
+        if %WAIT_COUNT% LSS 15 goto loop_esperar_porta
+    )
+    echo [OK] Servidor ativo e respondendo na porta 3000!
 )
 
 :: 3. Dispara reconexao automatica do WhatsApp caso haja sessao salva
