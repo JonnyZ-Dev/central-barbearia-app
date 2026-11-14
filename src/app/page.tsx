@@ -1261,7 +1261,7 @@ export default function Dashboard() {
                   SQLite Local Ativo
                 </span>
                 <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide animate-pulse">
-                  v2.3.0 • ANTI-DESCARTE & ÁUDIO INTELIGENTE
+                  v2.4.0 • REATIVAÇÃO POR 'OI' & MENU RÁPIDO
                 </span>
               </div>
             </div>

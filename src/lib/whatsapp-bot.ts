@@ -53,6 +53,27 @@ const atendimentosHumanosCache = new Map<string, {
   expiraEm: number;
 }>();
 
+// Helper que valida comandos que o cliente usa para reativar o robô e trazer o menu
+function ehComandoReativarBot(texto: string): boolean {
+  const t = (texto || "").trim().toLowerCase();
+  return (
+    t === "oi" ||
+    t === "ola" ||
+    t === "olá" ||
+    t === "oie" ||
+    t === "opa" ||
+    t === "menu" ||
+    t === "início" ||
+    t === "inicio" ||
+    t === "voltar" ||
+    t === "voltar ao menu" ||
+    t === "0" ||
+    t === "#bot" ||
+    t === "#menu" ||
+    t === "#voltar"
+  );
+}
+
 // Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência
 async function enviarMensagemDoBot(jid: string, content: any) {
   if (!sock) return null;
@@ -456,16 +477,14 @@ async function dispararProcessamentoChat(remoteJid: string) {
 
   // Se o atendimento humano estiver ativo para esta conversa
   if (verificarAtendimentoHumanoAtivo(remoteJid)) {
-    const temComandoReativar = chatState.mensagens.some(m => 
-      m.texto === "#bot" || m.texto === "#menu" || m.texto === "#voltar"
-    );
+    const temComandoReativar = chatState.mensagens.some(m => ehComandoReativarBot(m.texto));
     if (!temComandoReativar) {
       chatState.mensagens = [];
       console.log(`[ROBÔ SILENCIADO] Atendimento humano ativo para ${remoteJid}. Mensagens acumuladas não dispararão o robô.`);
       return;
     }
     removerPausaAtendimentoHumano(remoteJid);
-    console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando!`);
+    console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando no buffer!`);
   }
 
   chatState.processando = true;
@@ -786,11 +805,11 @@ export async function iniciarWhatsAppBot() {
           }
 
           if (verificarAtendimentoHumanoAtivo(remoteJid)) {
-            // Se o cliente ou atendente digitar #bot, #menu ou #voltar, reativa o robô!
-            if (textoCliente === "#bot" || textoCliente === "#menu" || textoCliente === "#voltar") {
+            // Se o cliente digitar "oi", "menu", "voltar", etc., reativa o robô na hora!
+            if (ehComandoReativarBot(textoCliente)) {
               removerPausaAtendimentoHumano(remoteJid);
-              console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando!`);
-              // Segue o fluxo normal para enviar o menu
+              console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando ('${textoCliente}')!`);
+              // Segue o fluxo normal para adicionar ao buffer e responder o menu!
             } else {
               // Renova a janela de pausa para continuar a conversa livre sem o robô atrapalhar
               const telLimpo = remoteJid.replace(/[^0-9]/g, "");
@@ -1365,12 +1384,13 @@ async function processarMensagemRobo(
       msg = msg.replace(new RegExp(`{${key}}`, "g"), val);
     }
 
-    // Rodapé amigável para voltar ao menu (exceto no próprio menu e alertas internos)
-    const rodapeMenu = "\n\n_💡 Se quiser voltar ao menu, basta dizer *oi* novamente que te trago o menu!_";
+    // Rodapé amigável para ir ao menu de atendimento rápido
+    const rodapeMenu = "\n\n_💡 Se quiser ir ao menu de atendimento rápido, basta dizer *OI* que te trago o menu com opções que podem te ajudar!_";
     if (
       templateId !== "msg_boas_vindas" &&
       templateId !== "msg_alerta_barbeiro" &&
-      !msg.includes("voltar ao menu") &&
+      !msg.includes("menu com opções") &&
+      !msg.includes("basta dizer OI") &&
       !msg.includes("basta dizer oi")
     ) {
       msg += rodapeMenu;
@@ -1383,12 +1403,13 @@ async function processarMensagemRobo(
   const enviarRespostaHumanizada = async (textoResposta: string) => {
     try {
       let textoFinal = textoResposta;
-      const rodapePadrao = "\n\n_💡 Se quiser voltar ao menu, basta dizer *oi* novamente que te trago o menu!_";
+      const rodapePadrao = "\n\n_💡 Se quiser ir ao menu de atendimento rápido, basta dizer *OI* que te trago o menu com opções que podem te ajudar!_";
       if (
         !textoFinal.includes("Menu Principal") &&
         !textoFinal.includes("Como podemos te ajudar hoje?") &&
         !textoFinal.includes("Aviso de Atendimento") &&
-        !textoFinal.includes("voltar ao menu") &&
+        !textoFinal.includes("menu com opções") &&
+        !textoFinal.includes("basta dizer OI") &&
         !textoFinal.includes("basta dizer oi")
       ) {
         textoFinal += rodapePadrao;
