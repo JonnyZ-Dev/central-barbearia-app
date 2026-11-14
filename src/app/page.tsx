@@ -48,7 +48,8 @@ import {
   PauseCircle,
   FileSpreadsheet,
   Upload,
-  FileDown
+  FileDown,
+  GitBranch
 } from "lucide-react";
 import { formatarTelefoneBR, validarTelefoneBR } from "@/lib/formatters";
 
@@ -77,6 +78,21 @@ export default function Dashboard() {
   const [resultadoImportacao, setResultadoImportacao] = useState<any | null>(null);
   const [licencaInfo, setLicencaInfo] = useState<any | null>(null);
   const [checandoLicenca, setChecandoLicenca] = useState(false);
+
+  // Estados de Atualização do Sistema (GitHub Auto-Updater)
+  const [statusAtualizacao, setStatusAtualizacao] = useState<{
+    configurado?: boolean;
+    versaoAtual?: string;
+    dataCommit?: string;
+    remoteUrl?: string;
+    temAtualizacao?: boolean;
+    commitsAtras?: number;
+    novidades?: string[];
+    mensagem?: string;
+    aviso?: string;
+  } | null>(null);
+  const [verificandoAtualizacao, setVerificandoAtualizacao] = useState(false);
+  const [aplicandoAtualizacao, setAplicandoAtualizacao] = useState(false);
 
   // Estados do WhatsApp e Robô
   const [botStatus, setBotStatus] = useState<{ status: string; qr: string | null; numero: string | null; pausado?: boolean }>({ status: "DESCONECTADO", qr: null, numero: null, pausado: false });
@@ -226,6 +242,48 @@ export default function Dashboard() {
     }
   };
 
+  // Checagem de Atualizações via GitHub
+  const checarAtualizacoes = async (silencioso: boolean = false) => {
+    try {
+      if (!silencioso) setVerificandoAtualizacao(true);
+      const res = await fetch("/api/sistema/atualizacoes");
+      const json = await res.json();
+      setStatusAtualizacao(json);
+      if (!silencioso) {
+        if (json.temAtualizacao) {
+          mostrarFeedback(`Nova versão encontrada! (${json.commitsAtras} melhoria/ões)`);
+        } else if (json.mensagem) {
+          mostrarFeedback(json.mensagem);
+        }
+      }
+    } catch (e) {
+      if (!silencioso) mostrarFeedback("Erro ao verificar atualizações do GitHub", "error");
+    } finally {
+      if (!silencioso) setVerificandoAtualizacao(false);
+    }
+  };
+
+  const aplicarAtualizacao = async () => {
+    if (!confirm("Deseja baixar e aplicar as atualizações do sistema agora? O processo é automático e seguro.")) return;
+    try {
+      setAplicandoAtualizacao(true);
+      const res = await fetch("/api/sistema/atualizacoes", { method: "POST" });
+      const json = await res.json();
+      if (json.sucesso) {
+        mostrarFeedback("Atualizações aplicadas com sucesso! Recarregando sistema...", "success");
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        mostrarFeedback(json.erro || "Falha ao aplicar atualizações.", "error");
+      }
+    } catch (e) {
+      mostrarFeedback("Erro ao conectar ao atualizador.", "error");
+    } finally {
+      setAplicandoAtualizacao(false);
+    }
+  };
+
   const carregarDados = async () => {
     try {
       const res = await fetch("/api/dashboard");
@@ -281,6 +339,12 @@ export default function Dashboard() {
     }, 30000);
     return () => clearInterval(intervalLicenca);
   }, []);
+
+  useEffect(() => {
+    if (activeTab === "config") {
+      checarAtualizacoes(true);
+    }
+  }, [activeTab]);
 
   // Login no sistema
   const handleLogin = async (e: React.FormEvent) => {
@@ -3103,6 +3167,101 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+
+            {/* CARD DE ATUALIZAÇÕES DO SISTEMA (GITHUB AUTO-UPDATER) */}
+            <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 max-w-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                    <Sparkles className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                      Atualizações do Sistema
+                      {statusAtualizacao?.temAtualizacao && (
+                        <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                          Nova Versão Disponível
+                        </span>
+                      )}
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Versão do código instalada neste notebook e sincronização remota via GitHub
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => checarAtualizacoes(false)}
+                  disabled={verificandoAtualizacao || aplicandoAtualizacao}
+                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold border border-zinc-700 flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${verificandoAtualizacao ? "animate-spin" : ""}`} />
+                  {verificandoAtualizacao ? "Verificando..." : "Buscar Atualizações"}
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
+                  <span className="text-[10px] uppercase font-bold text-zinc-500 block">Versão Instalada</span>
+                  <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5 mt-1">
+                    <GitBranch className="w-3.5 h-3.5 text-amber-400" />
+                    {statusAtualizacao?.versaoAtual ? `commit #${statusAtualizacao.versaoAtual}` : "v1.0.0"}
+                  </span>
+                  {statusAtualizacao?.dataCommit && (
+                    <span className="text-[10px] text-zinc-500 block mt-1">Data: {statusAtualizacao.dataCommit}</span>
+                  )}
+                </div>
+
+                <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
+                  <span className="text-[10px] uppercase font-bold text-zinc-500 block">Status da Conexão</span>
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5 mt-1">
+                    <span className={`w-2 h-2 rounded-full ${statusAtualizacao?.temAtualizacao ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
+                    {statusAtualizacao?.temAtualizacao 
+                      ? `${statusAtualizacao.commitsAtras} melhoria(s) pendente(s)` 
+                      : (statusAtualizacao?.configurado ? "Sistema 100% Atualizado" : "Repositório Local Pronto")}
+                  </span>
+                  <span className="text-[10px] text-zinc-500 block mt-1 truncate">
+                    {statusAtualizacao?.remoteUrl || "GitHub Remoto"}
+                  </span>
+                </div>
+              </div>
+
+              {statusAtualizacao?.temAtualizacao && (
+                <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-emerald-300">🎉 O que mudou nesta atualização:</h4>
+                    <ul className="mt-1.5 space-y-1 text-xs text-zinc-300">
+                      {statusAtualizacao.novidades?.map((novidade, idx) => (
+                        <li key={idx} className="flex items-center gap-1.5 font-mono text-[11px]">
+                          <span className="text-emerald-400 font-bold">•</span> {novidade}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={aplicarAtualizacao}
+                    disabled={aplicandoAtualizacao}
+                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                  >
+                    <Download className={`w-4 h-4 ${aplicandoAtualizacao ? "animate-bounce" : ""}`} />
+                    {aplicandoAtualizacao ? "Baixando e Aplicando Atualizações..." : "Instalar Atualizações Agora (1-Clique)"}
+                  </button>
+                </div>
+              )}
+
+              {statusAtualizacao?.aviso && (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
+                  {statusAtualizacao.aviso}
+                </div>
+              )}
+
+              <p className="text-[11px] text-zinc-500 leading-relaxed">
+                🛡️ <strong className="text-zinc-400">Proteção de Dados:</strong> O banco de dados de clientes, cortes registrados e a conexão do WhatsApp estão protegidos no <code>.gitignore</code> e <strong>nunca</strong> são afetados ou sobrescritos durante atualizações.
+              </p>
+            </div>
           </div>
         )}
 
