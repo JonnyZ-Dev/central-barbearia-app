@@ -1241,8 +1241,8 @@ export default function Dashboard() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   SQLite Local Ativo
                 </span>
-                <span className="text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide">
-                  v1.3.0 • Botão Padrão Dourado
+                <span className="text-[9px] bg-purple-500/20 text-purple-400 border border-purple-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide animate-pulse">
+                  v2.0.0 • ROXO ATUALIZADO
                 </span>
               </div>
             </div>
@@ -1475,9 +1475,9 @@ export default function Dashboard() {
               <div className="flex items-center gap-3">
                 <button 
                   onClick={() => setModalNovoMensalista(true)}
-                  className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition shadow-lg shadow-amber-500/10 active:scale-95"
+                  className="bg-purple-600 hover:bg-purple-500 text-white px-4 py-2.5 rounded-xl font-extrabold text-sm flex items-center gap-2 transition shadow-lg shadow-purple-500/30 active:scale-95"
                 >
-                  <Plus className="w-4 h-4" /> Novo Cliente VIP
+                  <Sparkles className="w-4 h-4" /> Novo Cliente VIP
                 </button>
               </div>
             </div>

@@ -40,6 +40,9 @@ if %ERRORLEVEL% EQU 0 (
                 git pull origin main
                 call "%NODE_CMD%" node_modules\next\dist\bin\next build
                 echo [OK] Sistema atualizado com sucesso!
+                echo [*] Reiniciando com a versao atualizada...
+                start "" "%~f0"
+                exit /b
             )
         )
     )
