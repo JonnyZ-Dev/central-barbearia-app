@@ -346,6 +346,12 @@ export default function Dashboard() {
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (data?.config?.nome_barbearia) {
+      document.title = `${data.config.nome_barbearia} - Central & WhatsApp`;
+    }
+  }, [data?.config?.nome_barbearia]);
+
   // Login no sistema
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -923,6 +929,27 @@ export default function Dashboard() {
     }
   };
 
+  // Alteração Rápida do Nome da Barbearia pelo Header
+  const salvarNomeBarbearia = async (novoNome: string) => {
+    try {
+      const payload: any = { ...data?.config, nome_barbearia: novoNome };
+      const res = await fetch("/api/configuracoes", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const json = await res.json();
+      if (json.success) {
+        setData((prev: any) => ({ ...prev, config: { ...prev.config, nome_barbearia: novoNome } }));
+        mostrarFeedback(`Nome da barbearia atualizado para "${novoNome}"!`, "success");
+      } else {
+        mostrarFeedback(json.error || "Erro ao salvar nome", "error");
+      }
+    } catch {
+      mostrarFeedback("Erro ao conectar com o servidor", "error");
+    }
+  };
+
   // Salvar Configurações
   const handleSalvarConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1188,15 +1215,28 @@ export default function Dashboard() {
         <div className="space-y-6">
           
           {/* Logo e Nome da Barbearia */}
-          <div className="flex items-center gap-3 px-1">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner">
+          <div className="flex items-center gap-3 px-1 group">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner flex-shrink-0">
               <Scissors className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="font-extrabold text-sm tracking-tight text-white leading-tight">
-                {data?.config?.nome_barbearia || "GM Barbershop"}
-              </h1>
-              <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold">
+            <div className="min-w-0 flex-1">
+              <div 
+                onClick={() => {
+                  const atual = data?.config?.nome_barbearia || "GM Barbershop";
+                  const novo = prompt("Digite o novo nome da Barbearia:", atual);
+                  if (novo && novo.trim() && novo.trim() !== atual) {
+                    salvarNomeBarbearia(novo.trim());
+                  }
+                }}
+                className="cursor-pointer group/title flex items-center gap-1.5"
+                title="Clique aqui para editar o nome da barbearia"
+              >
+                <h1 className="font-extrabold text-sm tracking-tight text-white leading-tight truncate group-hover/title:text-amber-400 transition">
+                  {data?.config?.nome_barbearia || "GM Barbershop"}
+                </h1>
+                <Edit className="w-3.5 h-3.5 text-zinc-500 group-hover/title:text-amber-400 opacity-60 group-hover/title:opacity-100 transition flex-shrink-0" />
+              </div>
+              <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold mt-0.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                 SQLite Local Ativo
               </span>
