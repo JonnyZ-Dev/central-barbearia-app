@@ -5,8 +5,7 @@ import pino from "pino";
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore
+  fetchLatestBaileysVersion
 } from "@whiskeysockets/baileys";
 import { getDb } from "./db";
 
@@ -45,110 +44,15 @@ const lidToPhoneMap = new Map<string, string>();
 // Controle de mensagens enviadas pelo próprio robô (para diferenciar de mensagens enviadas por humanos no celular)
 const mensagensEnviadasPeloRobo = new Set<string>();
 
-// Implementação leve de CacheStore compatível com Baileys para retry de mensagens
-interface CacheStore {
-  get<T>(key: string): T | undefined;
-  set<T>(key: string, value: T): void;
-  del(key: string): void;
-  flushAll(): void;
-}
-
-class SimpleCacheStore implements CacheStore {
-  private map = new Map<string, any>();
-  get<T>(key: string): T | undefined {
-    return this.map.get(key);
-  }
-  set<T>(key: string, value: T): void {
-    this.map.set(key, value);
-    if (this.map.size > 2000) {
-      const first = this.map.keys().next().value;
-      if (first) this.map.delete(first);
-    }
-  }
-  del(key: string): void {
-    this.map.delete(key);
-  }
-  flushAll(): void {
-    this.map.clear();
-  }
-}
-
-// Cache oficial do Baileys para rastrear retries e evitar mensagens presas em "Aguardando mensagem..."
-const msgRetryCounterCache = new SimpleCacheStore();
-
 // Cache em memória de alta performance para mensagens recentes (permite responder a retries de criptografia do WhatsApp)
-const mensagensArmazenadasStore = new Map<string, any>();
-
-function salvarMensagemNoCache(id: string, remoteJid: string | undefined, message: any) {
-  if (!id || !message) return;
-  try {
-    mensagensArmazenadasStore.set(id, message);
-    if (remoteJid) {
-      mensagensArmazenadasStore.set(`${remoteJid}:${id}`, message);
-    }
-    // Mantém no máximo 2000 mensagens na RAM
-    if (mensagensArmazenadasStore.size > 2000) {
-      const firstKey = mensagensArmazenadasStore.keys().next().value;
-      if (firstKey) mensagensArmazenadasStore.delete(firstKey);
-    }
-
-    // Persistência rápida no SQLite para sobreviver a reinicializações
-    try {
-      const db = getDb();
-      db.prepare(`
-        CREATE TABLE IF NOT EXISTS bot_mensagens_cache (
-          id TEXT PRIMARY KEY,
-          remote_jid TEXT,
-          message_json TEXT,
-          criado_em INTEGER
-        )
-      `).run();
-      db.prepare(`
-        INSERT OR REPLACE INTO bot_mensagens_cache (id, remote_jid, message_json, criado_em)
-        VALUES (?, ?, ?, ?)
-      `).run(id, remoteJid || "", JSON.stringify(message), Date.now());
-
-      // Manutenção periódica leve (mantém últimas 500 mensagens no banco)
-      if (Math.random() < 0.05) {
-        db.prepare(`
-          DELETE FROM bot_mensagens_cache 
-          WHERE id NOT IN (
-            SELECT id FROM bot_mensagens_cache ORDER BY criado_em DESC LIMIT 500
-          )
-        `).run();
-      }
-    } catch (e) {}
-  } catch (err) {}
-}
+const mensagensEnviadasStore = new Map<string, any>();
 
 async function recuperarMensagemDoCache(key: any): Promise<any> {
-  if (!key) return undefined;
-  const id = key.id;
-  const remoteJid = key.remoteJid;
-  if (!id) return undefined;
-
-  // 1. Tenta recuperar da RAM pela chave composta
-  if (remoteJid && mensagensArmazenadasStore.has(`${remoteJid}:${id}`)) {
-    return mensagensArmazenadasStore.get(`${remoteJid}:${id}`);
+  if (!key?.id) return undefined;
+  if (key.remoteJid && mensagensEnviadasStore.has(`${key.remoteJid}:${key.id}`)) {
+    return mensagensEnviadasStore.get(`${key.remoteJid}:${key.id}`);
   }
-
-  // 2. Tenta recuperar da RAM pelo ID simples
-  if (mensagensArmazenadasStore.has(id)) {
-    return mensagensArmazenadasStore.get(id);
-  }
-
-  // 3. Se não achou na RAM, busca no SQLite persistente
-  try {
-    const db = getDb();
-    const row: any = db.prepare("SELECT message_json FROM bot_mensagens_cache WHERE id = ?").get(id);
-    if (row?.message_json) {
-      const parsed = JSON.parse(row.message_json);
-      mensagensArmazenadasStore.set(id, parsed);
-      return parsed;
-    }
-  } catch (e) {}
-
-  return undefined;
+  return mensagensEnviadasStore.get(key.id);
 }
 
 // Cache em memória de conversas em atendimento humano (robô em pausa)
@@ -192,9 +96,16 @@ async function enviarMensagemDoBot(jid: string, content: any) {
       if (first) mensagensEnviadasPeloRobo.delete(first);
     }
 
-    // Salva a mensagem enviada no cache para resposta imediata a retry de criptografia
+    // Salva a mensagem enviada em memória para resposta instantânea ao retry de criptografia
     const msgParaSalvar = sent.message || (content?.text ? { conversation: content.text } : content);
-    salvarMensagemNoCache(sent.key.id, sent.key.remoteJid || jid, msgParaSalvar);
+    mensagensEnviadasStore.set(sent.key.id, msgParaSalvar);
+    if (sent.key.remoteJid) {
+      mensagensEnviadasStore.set(`${sent.key.remoteJid}:${sent.key.id}`, msgParaSalvar);
+    }
+    if (mensagensEnviadasStore.size > 2000) {
+      const firstKey = mensagensEnviadasStore.keys().next().value;
+      if (firstKey) mensagensEnviadasStore.delete(firstKey);
+    }
   }
   return sent;
 }
@@ -675,11 +586,7 @@ export async function iniciarWhatsAppBot() {
 
     sock = makeWASocket({
       version,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
-      },
-      msgRetryCounterCache,
+      auth: state,
       getMessage: recuperarMensagemDoCache,
       logger: pino({ level: "silent" }),
       printQRInTerminal: false,
@@ -700,12 +607,20 @@ export async function iniciarWhatsAppBot() {
 
       if (connection === "close") {
         const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
-        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        const isLoggedOut = statusCode === DisconnectReason.loggedOut;
         connectionStatus = "DESCONECTADO";
         currentQr = null;
         isConnecting = false;
 
-        if (shouldReconnect) {
+        if (isLoggedOut) {
+          console.log("[BOT] Sessão desconectada/expirada no WhatsApp. Limpando credenciais antigas para novo QR Code...");
+          if (fs.existsSync(AUTH_DIR)) {
+            try {
+              fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+            } catch (e) {}
+          }
+          setTimeout(() => iniciarWhatsAppBot(), 1500);
+        } else {
           setTimeout(() => iniciarWhatsAppBot(), 5000);
         }
       } else if (connection === "open") {
@@ -893,13 +808,16 @@ export async function iniciarWhatsAppBot() {
           // Ignorar reações, mensagens apagadas, recibos de leitura e protocolos
           if (msg.message.protocolMessage || msg.message.reactionMessage) continue;
 
-          // 2. DEDUPLICAÇÃO ABSOLUTA & REGISTRO NO CACHE DE CRIPTOGRAFIA
+          // 2. DEDUPLICAÇÃO ABSOLUTA: Toda mensagem do WhatsApp possui um ID único exclusivo (msg.key.id)
           const msgId = msg.key.id;
-          if (msgId && msg.message) {
-            salvarMensagemNoCache(msgId, msg.key.remoteJid, msg.message);
-          }
           if (!msgId || mensagensProcessadas.has(msgId)) continue;
           mensagensProcessadas.add(msgId);
+          if (msg.message) {
+            mensagensEnviadasStore.set(msgId, msg.message);
+            if (msg.key.remoteJid) {
+              mensagensEnviadasStore.set(`${msg.key.remoteJid}:${msgId}`, msg.message);
+            }
+          }
 
           // Manter o cache controlado para evitar acúmulo de memória
           if (mensagensProcessadas.size > 2000) {
