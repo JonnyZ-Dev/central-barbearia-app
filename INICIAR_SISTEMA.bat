@@ -65,7 +65,7 @@ for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') 
 >> "%~dp0_executar_update.bat" echo git reset --hard origin/main
 >> "%~dp0_executar_update.bat" echo call "%NODE_CMD%" node_modules\next\dist\bin\next build
 >> "%~dp0_executar_update.bat" echo start "" "%~f0"
->> "%~dp0_executar_update.bat" echo del /f /q "%~dp0_executar_update.bat"
+>> "%~dp0_executar_update.bat" echo start /b "" cmd /c "timeout /t 2 /nobreak >nul & del /f /q \"%~dp0_executar_update.bat\""
 >> "%~dp0_executar_update.bat" echo exit
 
 start "Atualizador" "%~dp0_executar_update.bat"

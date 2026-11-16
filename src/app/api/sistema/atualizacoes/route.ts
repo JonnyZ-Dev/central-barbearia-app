@@ -139,7 +139,7 @@ timeout /t 1 /nobreak >nul
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
 call "%NODE_CMD%" node_modules\\next\\dist\\bin\\next build
 start "Barbearia_Server" /min "%NODE_CMD%" node_modules\\next\\dist\\bin\\next start -p 3000 -H 0.0.0.0
-del "%~f0" >nul 2>&1
+start /b "" cmd /c "timeout /t 2 /nobreak >nul & del /f /q \"%~f0\""
 exit
 `;
     fs.writeFileSync(batPath, batContent);
