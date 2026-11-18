@@ -7,6 +7,7 @@ import makeWASocket, {
   useMultiFileAuthState,
   fetchLatestBaileysVersion
 } from "@whiskeysockets/baileys";
+import { NodeCache } from "@cacheable/node-cache";
 import { getDb } from "./db";
 
 const AUTH_DIR = path.join(process.cwd(), "database", "auth_info_baileys");
@@ -44,15 +45,74 @@ const lidToPhoneMap = new Map<string, string>();
 // Controle de mensagens enviadas pelo próprio robô (para diferenciar de mensagens enviadas por humanos no celular)
 const mensagensEnviadasPeloRobo = new Set<string>();
 
-// Cache em memória de alta performance para mensagens recentes (permite responder a retries de criptografia do WhatsApp)
-const mensagensEnviadasStore = new Map<string, any>();
+// Cache oficial para retries do Baileys persistente na RAM (sobrevive a reconexões do socket)
+const msgRetryCounterCache = new NodeCache({ stdTTL: 3600, useClones: false }) as any;
+const placeholderResendCache = new NodeCache({ stdTTL: 3600, useClones: false }) as any;
+
+// Cache em memória e SQLite de mensagens para responder instantaneamente a retries de criptografia do WhatsApp
+const mensagensCacheStore = new Map<string, any>();
+
+function salvarMensagemNoCache(id: string, remoteJid: string | undefined, message: any) {
+  if (!id || !message) return;
+  try {
+    const rawMsg = message?.message || message;
+    mensagensCacheStore.set(id, rawMsg);
+    if (remoteJid) {
+      mensagensCacheStore.set(`${remoteJid}:${id}`, rawMsg);
+    }
+    if (mensagensCacheStore.size > 2000) {
+      const firstKey = mensagensCacheStore.keys().next().value;
+      if (firstKey) mensagensCacheStore.delete(firstKey);
+    }
+
+    try {
+      const db = getDb();
+      db.prepare(`
+        INSERT OR REPLACE INTO bot_mensagens_cache (id, remote_jid, message_json, criado_em)
+        VALUES (?, ?, ?, ?)
+      `).run(id, remoteJid || "", JSON.stringify(rawMsg), Date.now());
+
+      if (Math.random() < 0.02) {
+        db.prepare(`
+          DELETE FROM bot_mensagens_cache 
+          WHERE id NOT IN (
+            SELECT id FROM bot_mensagens_cache ORDER BY criado_em DESC LIMIT 1000
+          )
+        `).run();
+      }
+    } catch (e) {}
+  } catch (err) {}
+}
 
 async function recuperarMensagemDoCache(key: any): Promise<any> {
   if (!key?.id) return undefined;
-  if (key.remoteJid && mensagensEnviadasStore.has(`${key.remoteJid}:${key.id}`)) {
-    return mensagensEnviadasStore.get(`${key.remoteJid}:${key.id}`);
+  const id = key.id;
+  const remoteJid = key.remoteJid;
+
+  // 1. Tenta recuperar da RAM pela chave composta
+  if (remoteJid && mensagensCacheStore.has(`${remoteJid}:${id}`)) {
+    const raw = mensagensCacheStore.get(`${remoteJid}:${id}`);
+    return raw?.message || raw;
   }
-  return mensagensEnviadasStore.get(key.id);
+
+  // 2. Tenta recuperar da RAM pelo ID simples
+  if (mensagensCacheStore.has(id)) {
+    const raw = mensagensCacheStore.get(id);
+    return raw?.message || raw;
+  }
+
+  // 3. Se não achou na RAM, busca no SQLite persistente
+  try {
+    const db = getDb();
+    const row: any = db.prepare("SELECT message_json FROM bot_mensagens_cache WHERE id = ?").get(id);
+    if (row?.message_json) {
+      const parsed = JSON.parse(row.message_json);
+      mensagensCacheStore.set(id, parsed);
+      return parsed?.message || parsed;
+    }
+  } catch (e) {}
+
+  return undefined;
 }
 
 // Cache em memória de conversas em atendimento humano (robô em pausa)
@@ -65,24 +125,47 @@ const atendimentosHumanosCache = new Map<string, {
 }>();
 
 // Helper que valida comandos que o cliente usa para reativar o robô e trazer o menu
+// Helper que valida comandos e palavras-chave que reativam o robô quando em atendimento humano
 function ehComandoReativarBot(texto: string): boolean {
   const t = (texto || "").trim().toLowerCase();
-  return (
-    t === "oi" ||
-    t === "ola" ||
-    t === "olá" ||
-    t === "oie" ||
-    t === "opa" ||
-    t === "menu" ||
-    t === "início" ||
-    t === "inicio" ||
-    t === "voltar" ||
-    t === "voltar ao menu" ||
-    t === "0" ||
-    t === "#bot" ||
-    t === "#menu" ||
-    t === "#voltar"
-  );
+  if (!t) return false;
+  if (
+    [
+      "oi", "ola", "olá", "oie", "opa", "salve", "fala", "eai", "e ai", 
+      "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", 
+      "menu", "início", "inicio", "voltar", "voltar ao menu", "0", 
+      "#bot", "#menu", "#voltar", "comecar", "começar"
+    ].includes(t)
+  ) {
+    return true;
+  }
+  if (
+    t.includes("agendar") ||
+    t.includes("marcar") ||
+    t.includes("horario") ||
+    t.includes("horário") ||
+    t.includes("vaga") ||
+    t.includes("booksy") ||
+    t.includes("preco") ||
+    t.includes("preço") ||
+    t.includes("quanto custa") ||
+    t.includes("valor") ||
+    t.includes("tabela") ||
+    t.includes("onde fica") ||
+    t.includes("endereco") ||
+    t.includes("endereço") ||
+    t.includes("como chegar") ||
+    t.includes("pix") ||
+    t.includes("pagamento") ||
+    t.includes("cartao") ||
+    t.includes("cartão") ||
+    t.includes("plano") ||
+    t.includes("mensalista") ||
+    t.includes("assinatura")
+  ) {
+    return true;
+  }
+  return false;
 }
 
 // Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência e retries
@@ -96,16 +179,9 @@ async function enviarMensagemDoBot(jid: string, content: any) {
       if (first) mensagensEnviadasPeloRobo.delete(first);
     }
 
-    // Salva a mensagem enviada em memória para resposta instantânea ao retry de criptografia
+    // Salva a mensagem enviada no cache para resposta imediata ao retry de criptografia do WhatsApp
     const msgParaSalvar = sent.message || (content?.text ? { conversation: content.text } : content);
-    mensagensEnviadasStore.set(sent.key.id, msgParaSalvar);
-    if (sent.key.remoteJid) {
-      mensagensEnviadasStore.set(`${sent.key.remoteJid}:${sent.key.id}`, msgParaSalvar);
-    }
-    if (mensagensEnviadasStore.size > 2000) {
-      const firstKey = mensagensEnviadasStore.keys().next().value;
-      if (firstKey) mensagensEnviadasStore.delete(firstKey);
-    }
+    salvarMensagemNoCache(sent.key.id, sent.key.remoteJid || jid, msgParaSalvar);
   }
   return sent;
 }
@@ -587,6 +663,8 @@ export async function iniciarWhatsAppBot() {
     sock = makeWASocket({
       version,
       auth: state,
+      msgRetryCounterCache,
+      placeholderResendCache,
       getMessage: recuperarMensagemDoCache,
       logger: pino({ level: "silent" }),
       printQRInTerminal: false,
@@ -808,15 +886,12 @@ export async function iniciarWhatsAppBot() {
           // Ignorar reações, mensagens apagadas, recibos de leitura e protocolos
           if (msg.message.protocolMessage || msg.message.reactionMessage) continue;
 
-          // 2. DEDUPLICAÇÃO ABSOLUTA: Toda mensagem do WhatsApp possui um ID único exclusivo (msg.key.id)
+          // 2. DEDUPLICAÇÃO ABSOLUTA & REGISTRO NO CACHE DE CRIPTOGRAFIA
           const msgId = msg.key.id;
           if (!msgId || mensagensProcessadas.has(msgId)) continue;
           mensagensProcessadas.add(msgId);
           if (msg.message) {
-            mensagensEnviadasStore.set(msgId, msg.message);
-            if (msg.key.remoteJid) {
-              mensagensEnviadasStore.set(`${msg.key.remoteJid}:${msgId}`, msg.message);
-            }
+            salvarMensagemNoCache(msgId, msg.key.remoteJid, msg.message);
           }
 
           // Manter o cache controlado para evitar acúmulo de memória
@@ -867,10 +942,9 @@ export async function iniciarWhatsAppBot() {
             continue;
           }
 
-          // 5. Marcar mensagem como lida no WhatsApp imediatamente
-          try {
-            await sock.readMessages([msg.key]);
-          } catch (readErr) {}
+          // 5. Preservar notificações no celular:
+          // NÃO marcamos como lida no Baileys (sock.readMessages) para que o WhatsApp do barbeiro
+          // toque, vibre e exiba o aviso de mensagem não lida normalmente no celular.
 
           // 6. Extrair se é áudio (PTT) ou mídia
           const ehAudio = Boolean(
@@ -1421,18 +1495,6 @@ async function processarMensagemRobo(
       msg = msg.replace(new RegExp(`{${key}}`, "g"), val);
     }
 
-    // Rodapé amigável para ir ao menu de atendimento rápido
-    const rodapeMenu = "\n\n_💡 Se quiser ir ao menu de atendimento rápido, basta dizer *OI* que te trago o menu com opções que podem te ajudar!_";
-    if (
-      templateId !== "msg_boas_vindas" &&
-      templateId !== "msg_alerta_barbeiro" &&
-      !msg.includes("menu com opções") &&
-      !msg.includes("basta dizer OI") &&
-      !msg.includes("basta dizer oi")
-    ) {
-      msg += rodapeMenu;
-    }
-
     return msg;
   };
 
@@ -1440,17 +1502,6 @@ async function processarMensagemRobo(
   const enviarRespostaHumanizada = async (textoResposta: string) => {
     try {
       let textoFinal = textoResposta;
-      const rodapePadrao = "\n\n_💡 Se quiser ir ao menu de atendimento rápido, basta dizer *OI* que te trago o menu com opções que podem te ajudar!_";
-      if (
-        !textoFinal.includes("Menu Principal") &&
-        !textoFinal.includes("Como podemos te ajudar hoje?") &&
-        !textoFinal.includes("Aviso de Atendimento") &&
-        !textoFinal.includes("menu com opções") &&
-        !textoFinal.includes("basta dizer OI") &&
-        !textoFinal.includes("basta dizer oi")
-      ) {
-        textoFinal += rodapePadrao;
-      }
 
       // 1. Simular status "digitando..." (composing)
       await sock.sendPresenceUpdate("composing", remoteJid);
@@ -1525,105 +1576,22 @@ async function processarMensagemRobo(
     return;
   }
 
-  // 0. MENU PRINCIPAL (DISPARADO QUANDO O CLIENTE DIGITA "OI", "MENU", "VOLTAR", "0", ETC.)
-  if (
-    texto === "0" ||
-    texto === "oi" ||
-    texto === "ola" ||
-    texto === "olá" ||
-    texto === "menu" ||
-    texto === "início" ||
-    texto === "inicio" ||
-    texto === "voltar" ||
-    texto === "voltar ao menu" ||
-    texto.includes("menu principal") ||
-    texto.includes("ver menu")
-  ) {
-    const fallbackBoasVindas = `Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️\n\nComo podemos te ajudar hoje? Digite o *número* da opção desejada:\n\n1️⃣ - *Agendar Horário Rápido (Booksy)*\n2️⃣ - *Tabela de Serviços & Plano VIP (Cortes, Barba e Químicas)*\n3️⃣ - *Falar com um Barbeiro da Equipe*\n4️⃣ - *Quantos cortes me restam? (Plano Mensal)*\n\n🔑 *Chave Pix Oficial:* *{pix}*\n\n_Ou envie sua dúvida diretamente que responderemos em instantes!_`;
-    const resposta = preencherTemplate("msg_boas_vindas", fallbackBoasVindas);
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 1. AGENDAMENTO NO BOOKSY (OPÇÃO 1)
-  if (
-    texto === "1" ||
-    texto.includes("agendar") ||
-    texto.includes("marcar") ||
-    texto.includes("agenda") ||
-    texto.includes("vaga") ||
-    texto.includes("booksy")
-  ) {
-    const resposta = preencherTemplate("msg_booksy", "Acesse nosso Booksy para agendar: {link_booksy}");
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 2. TABELA DE SERVIÇOS & PLANOS VIPS (OPÇÃO 2)
-  if (
-    texto === "2" ||
-    texto === "servico" ||
-    texto === "servicos" ||
-    texto === "serviço" ||
-    texto === "serviços" ||
-    texto === "corte" ||
-    texto === "cortes" ||
-    texto === "tabela" ||
-    texto === "preço" ||
-    texto === "preco" ||
-    texto === "precos" ||
-    texto === "preços" ||
-    texto === "quanto custa" ||
-    texto === "valor" ||
-    texto === "valores" ||
-    texto === "plano" ||
-    texto === "planos" ||
-    texto === "vip" ||
-    texto === "clube" ||
-    texto === "assinatura" ||
-    texto === "pacote" ||
-    texto === "pacotes" ||
-    texto === "mensal" ||
-    texto === "mensalista" ||
-    texto === "quimica" ||
-    texto === "química" ||
-    texto === "quimicas" ||
-    texto === "químicas" ||
-    texto === "luzes" ||
-    texto === "platinado" ||
-    texto === "nevou" ||
-    texto === "nevar" ||
-    texto === "progressiva" ||
-    texto === "botox" ||
-    texto === "selagem" ||
-    texto === "relaxamento" ||
-    texto === "coloracao" ||
-    texto === "coloração"
-  ) {
-    const resposta = preencherTemplate("msg_servicos", "Confira nossos Planos VIP e Serviços:\n{lista_servicos}\nAgende: {link_booksy}");
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // VERIFICAÇÃO SE O CLIENTE ESCOLHEU UM BARBEIRO ESPECÍFICO (OU DIGITOU O NOME DELE)
+  // VERIFICAÇÃO SE O CLIENTE CITOU OU ESCOLHEU UM BARBEIRO ESPECÍFICO
   const barbeirosAtivos: any[] = db.prepare("SELECT * FROM barbeiros WHERE ativo = 1").all() || [];
   for (const b of barbeirosAtivos) {
-    const primeiroNome = String(b.nome).split(" ")[0].toLowerCase().trim();
-    const nomeCompleto = String(b.nome).toLowerCase().trim();
-
+    const nomeLower = String(b.nome || "").toLowerCase().trim();
+    const primeiroNome = nomeLower.split(" ")[0];
     if (
+      texto === nomeLower ||
       texto === primeiroNome ||
-      texto === nomeCompleto ||
-      texto.includes(`falar com ${primeiroNome}`) ||
-      texto.includes(`falar com o ${primeiroNome}`) ||
-      texto.includes(`falar com a ${primeiroNome}`) ||
-      texto.includes(`cortar com ${primeiroNome}`) ||
-      texto.includes(`cortar com o ${primeiroNome}`) ||
-      texto.includes(`cortar com a ${primeiroNome}`) ||
+      texto.includes(`barbeiro ${primeiroNome}`) ||
+      texto.includes(`com o ${primeiroNome}`) ||
+      texto.includes(`com a ${primeiroNome}`) ||
       texto.includes(`com ${primeiroNome}`) ||
-      texto.includes(`atendimento com ${primeiroNome}`)
+      texto.includes(`atendimento com ${primeiroNome}`) ||
+      texto.includes(`falar com ${primeiroNome}`) ||
+      texto.includes(`agendar com ${primeiroNome}`)
     ) {
-      // 1. Enviar notificação privada no WhatsApp do barbeiro selecionado!
       let telBarbeiro = String(b.telefone_whatsapp || "").replace(/\D/g, "");
       if (telBarbeiro.length >= 10 && !telBarbeiro.startsWith("55")) {
         telBarbeiro = "55" + telBarbeiro;
@@ -1649,71 +1617,83 @@ async function processarMensagemRobo(
         }
       }
 
-      // 2. Responder ao cliente na conversa principal
       await enviarRespostaHumanizada(
         `Perfeito, *${nomeCliente}*! Acabei de mandar um aviso particular no WhatsApp do *${b.nome}* avisando que você quer falar com ele! 💈📲\n\nAssim que ele liberar a cadeira, ele responderá aqui.\n\nSe preferir agendar no Booksy para garantir seu horário sem fila:\n👉 *${linkBooksy}*`
       );
+      ativarPausaAtendimentoHumano(remoteJid, `Cliente solicitou atendimento com o barbeiro ${b.nome}`, extraInfo?.pushName, numeroLimpo);
       return;
     }
   }
 
-  // Se o cliente digitar 0 ou pedir qualquer barbeiro
-  if (texto === "0" || texto === "qualquer" || texto.includes("qualquer um") || texto.includes("qualquer barbeiro")) {
-    await enviarRespostaHumanizada(
-      `Show de bola, *${nomeCliente}*! Qualquer um dos nossos profissionais está super preparado para te atender com excelência! 💈\n\nPara agendar com quem tiver a vaga mais próxima no Booksy:\n👉 *${linkBooksy}*\n\nOu mande sua dúvida aqui que nossa equipe te responderá em instantes!`
-    );
-    return;
-  }
-
-  // 3. SELEÇÃO DE BARBEIRO DA EQUIPE
+  // 1. AGENDAMENTO NO BOOKSY (Palavras-chave: agendar, marcar, horário, vaga, Booksy)
   if (
-    texto === "3" ||
-    (texto.includes("barbeiro") && !texto.includes("clube da barba")) ||
-    texto.includes("equipe") ||
-    texto.includes("profissionais") ||
-    texto.includes("quem atende")
+    texto === "1" ||
+    texto.includes("agendar") ||
+    texto.includes("marcar") ||
+    texto.includes("agendamento") ||
+    texto.includes("marcar horario") ||
+    texto.includes("marcar horário") ||
+    texto.includes("marcar um corte") ||
+    texto.includes("marcar corte") ||
+    texto.includes("cortar cabelo") ||
+    texto.includes("cortar o cabelo") ||
+    texto.includes("fazer cabelo") ||
+    texto.includes("vaga") ||
+    texto.includes("vagas") ||
+    texto.includes("booksy")
   ) {
-    const resposta = preencherTemplate("msg_escolha_barbeiro", "Com qual barbeiro prefere ser atendido?\n{lista_barbeiros}");
+    const resposta = preencherTemplate(
+      "msg_booksy",
+      `Top, *${nomeCliente}*! Para agendar sem fila e escolher seu barbeiro favorito, acesse o link oficial do nosso Booksy:\n\n👉 *{link_booksy}*\n\n✅ Escolha o profissional e o serviço\n✅ Selecione o dia e horário que melhor se encaixam pra você\n✅ Confirmação instantânea no seu celular!\n\nTe esperamos na cadeira da *{barbearia}*! ✂️🔥`
+    );
     await enviarRespostaHumanizada(resposta);
     return;
   }
 
-  // 4. CONSULTA DE CRÉDITOS DO MENSALISTA VIP
+  // 2. TABELA DE SERVIÇOS & PREÇOS (Palavras-chave: preço, valor, quanto custa, tabela, catálogo)
   if (
-    texto === "4" ||
-    texto.includes("saldo") ||
-    texto.includes("crédito") ||
-    texto.includes("credito") ||
-    texto.includes("quantos cortes") ||
-    texto.includes("meus cortes") ||
-    texto.includes("minha assinatura")
+    texto === "2" ||
+    texto.includes("preco") ||
+    texto.includes("preço") ||
+    texto.includes("precos") ||
+    texto.includes("preços") ||
+    texto.includes("quanto custa") ||
+    texto.includes("quanto e") ||
+    texto.includes("quanto é") ||
+    texto.includes("tabela") ||
+    texto.includes("valor") ||
+    texto.includes("valores") ||
+    texto.includes("servico") ||
+    texto.includes("serviço") ||
+    texto.includes("servicos") ||
+    texto.includes("serviços") ||
+    texto.includes("catalogo") ||
+    texto.includes("catálogo")
   ) {
-    if (mensalista) {
-      const resposta = preencherTemplate("msg_consulta_mensalista", "Olá {cliente}! Você tem {cortes} cortes e {barbas} barbas restantes no seu plano {plano}.");
-      await enviarRespostaHumanizada(resposta);
-    } else {
-      await enviarRespostaHumanizada(
-        `Opa ${nomeCliente}! Não identificamos uma assinatura VIP ativa vinculada ao seu número de telefone.\n\nPara conhecer nossos planos com cortes semanais ou quinzenais e economizar até 40%, digite *1*!`
-      );
-    }
+    const resposta = preencherTemplate(
+      "msg_servicos",
+      `📋 *Tabela de Serviços & Valores - {barbearia}:* 💈\n\n{lista_servicos}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*\n\n🔑 *Chave Pix Oficial:* *{pix}*`
+    );
+    await enviarRespostaHumanizada(resposta);
     return;
   }
 
-  // 5. ENDEREÇO, LOCALIZAÇÃO & PIX (Mantém 7 como alias antigo)
+  // 3. ENDEREÇO & LOCALIZAÇÃO (Palavras-chave: onde fica, endereço, localização, como chegar, maps)
   if (
     texto === "5" ||
-    texto === "7" ||
-    texto.includes("endereço") ||
+    texto.includes("onde fica") ||
     texto.includes("endereco") ||
+    texto.includes("endereço") ||
     texto.includes("localizacao") ||
     texto.includes("localização") ||
-    texto.includes("onde fica") ||
+    texto.includes("local") ||
     texto.includes("como chegar") ||
+    texto.includes("qual a rua") ||
+    texto.includes("qual o bairro") ||
     texto.includes("maps") ||
     texto.includes("waze") ||
-    texto.includes("pix")
+    texto.includes("gps")
   ) {
-    // 1. Enviar Card Interativo com Mapa GPS Nativo do WhatsApp (Location Message)
     let lat: number | null = (config.latitude !== null && config.latitude !== undefined && config.latitude !== "") ? Number(config.latitude) : null;
     let lng: number | null = (config.longitude !== null && config.longitude !== undefined && config.longitude !== "") ? Number(config.longitude) : null;
 
@@ -1727,8 +1707,7 @@ async function processarMensagemRobo(
 
     if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
       try {
-        // Pausa natural simulando o envio da localização no celular (1.5 a 2.2 segundos)
-        await new Promise(r => setTimeout(r, 1500 + Math.random() * 700));
+        await new Promise(r => setTimeout(r, 1200 + Math.random() * 500));
         await enviarMensagemDoBot(remoteJid, {
           location: {
             degreesLatitude: lat,
@@ -1738,37 +1717,170 @@ async function processarMensagemRobo(
             url: maps
           }
         });
-        // Pausa natural entre o card do mapa e a mensagem de texto explicativa
-        await new Promise(r => setTimeout(r, 1000 + Math.random() * 500));
+        await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
       } catch (locErr) {
         console.error("Erro ao enviar card de localização GPS:", locErr);
       }
     }
 
-    // 2. Enviar mensagem detalhada com endereço, link do Google Maps/Waze, horários e chave Pix
-    const resposta = preencherTemplate("msg_localizacao_pix", "Localização: {endereco}\nMaps: {maps}\nPix: {pix}");
+    const resposta = preencherTemplate(
+      "msg_localizacao_pix",
+      `📍 *Endereço da Barbearia:*\n{endereco}\n\n🗺️ *Link direto no Google Maps / Waze:*\n{maps}\n\n⏰ *Horário de Funcionamento:*\n{horario}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*`
+    );
     await enviarRespostaHumanizada(resposta);
     return;
   }
 
-  // 6. HORÁRIOS DE ATENDIMENTO (Mantém 8 como alias antigo)
+  // 4. PIX & FORMAS DE PAGAMENTO (Palavras-chave: pix, chave pix, pagamento, pagar, cartão, dinheiro)
+  if (
+    texto.includes("pix") ||
+    texto.includes("chave pix") ||
+    texto.includes("pagamento") ||
+    texto.includes("pagar") ||
+    texto.includes("forma de pagamento") ||
+    texto.includes("formas de pagamento") ||
+    texto.includes("cartao") ||
+    texto.includes("cartão") ||
+    texto.includes("debito") ||
+    texto.includes("débito") ||
+    texto.includes("credito") ||
+    texto.includes("crédito") ||
+    texto.includes("dinheiro")
+  ) {
+    const resposta = preencherTemplate(
+      "msg_pagamentos",
+      `💳 *Formas de Pagamento Aceitas - {barbearia}:*\n\nAceitamos Pix, cartões de débito/crédito e dinheiro! 💵\n\n🔑 *Chave Pix Oficial da Barbearia:* *{pix}*\n\n_(Caso seja pagamento de corte ou assinatura, por favor envie o comprovante com seu nome aqui no chat!)_`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 5. HORÁRIOS DE ATENDIMENTO / FUNCIONAMENTO (Palavras-chave: horário, que horas, abre, fecha, tá aberto)
   if (
     texto === "6" ||
     texto === "8" ||
     texto.includes("horario de funcionamento") ||
+    texto.includes("horário de funcionamento") ||
+    texto.includes("horario de atendimento") ||
+    texto.includes("horário de atendimento") ||
     texto.includes("que horas") ||
     texto.includes("abre") ||
     texto.includes("fecha") ||
-    texto.includes("aberto") ||
-    texto.includes("domingo") ||
-    texto.includes("segunda")
+    texto.includes("ta aberto") ||
+    texto.includes("tá aberto") ||
+    texto.includes("funciona ate") ||
+    texto.includes("funciona até")
   ) {
-    const resposta = preencherTemplate("msg_horarios", "Horário de atendimento: {horario}\nAgende: {link_booksy}");
+    const resposta = preencherTemplate(
+      "msg_horarios",
+      `⏰ *Horários de Atendimento da {barbearia}:*\n\n{horario}\n\n📲 *Agende seu horário 24h pelo Booksy:*\n👉 *{link_booksy}*`
+    );
     await enviarRespostaHumanizada(resposta);
     return;
   }
 
-  // 7. FALAR COM ATENDENTE HUMANO (Mantém 9 como alias antigo)
+  // 6. PLANOS VIPS & CLUBE DE ASSINATURA (Palavras-chave: plano, planos, mensal, mensalista, clube, assinatura)
+  if (
+    texto.includes("plano") ||
+    texto.includes("planos") ||
+    texto.includes("clube") ||
+    texto.includes("assinatura") ||
+    texto.includes("mensal") ||
+    texto.includes("mensalista") ||
+    texto.includes("pacote") ||
+    texto.includes("pacotes")
+  ) {
+    const resposta = preencherTemplate(
+      "msg_planos_vip",
+      `👑 *Conheça o Clube de Assinatura VIP da {barbearia}!* 💈\n\nCorte o cabelo toda semana e economize até 40% no mês! Vantagens exclusivas:\n\n{lista_planos}\n\n🔑 *Chave Pix Oficial para Assinaturas:* *{pix}*\n_(Após transferir, envie o comprovante com seu nome aqui no chat)_`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 7. CONSULTA DE CRÉDITOS DO MENSALISTA VIP (Palavras-chave: saldo, crédito, quantos cortes me restam)
+  if (
+    texto === "4" ||
+    texto.includes("saldo") ||
+    texto.includes("crédito") ||
+    texto.includes("credito") ||
+    texto.includes("quantos cortes") ||
+    texto.includes("meus cortes") ||
+    texto.includes("me resta") ||
+    texto.includes("minha assinatura")
+  ) {
+    if (mensalista) {
+      const resposta = preencherTemplate(
+        "msg_consulta_mensalista",
+        `Fala *${nomeCliente}*! Consultamos seu plano VIP aqui no sistema: 👑\n\n📌 *Seu Plano:* {plano}\n{detalhes_saldo}\n📅 *Validade do seu Ciclo:* {vencimento}\n\nAproveite seus benefícios e agende pelo Booksy:\n👉 *{link_booksy}*\n\n🔑 *Chave Pix para Renovação do Ciclo:* *{pix}*`
+      );
+      await enviarRespostaHumanizada(resposta);
+    } else {
+      await enviarRespostaHumanizada(
+        `Opa, *${nomeCliente}*! Não identificamos uma assinatura VIP ativa vinculada ao seu número de WhatsApp.\n\nQuer cortar o cabelo toda semana e economizar no mês? Conheça nossos Planos VIPs:\n\n${obterPlanosVipFormatados(db)}\n\n🔑 *Chave Pix:* *${chavePix}*`
+      );
+    }
+    return;
+  }
+
+  // 8. SERVIÇOS DE BARBA & BARBOTERAPIA
+  if (texto === "barba" || texto.includes("fazer barba") || texto.includes("fazer a barba") || texto.includes("aparar barba") || texto.includes("barboterapia")) {
+    const resposta = preencherTemplate(
+      "msg_barba_terapia",
+      `🧔 *Serviços de Barba na {barbearia}:*\n\n{servicos_barba}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 9. PROCEDIMENTOS QUÍMICOS / LUZES / PLATINADO
+  if (
+    texto === "3" ||
+    texto.includes("quimica") ||
+    texto.includes("química") ||
+    texto.includes("platinado") ||
+    texto.includes("nevou") ||
+    texto.includes("nevar") ||
+    texto.includes("luzes") ||
+    texto.includes("progressiva") ||
+    texto.includes("botox") ||
+    texto.includes("selagem") ||
+    texto.includes("relaxamento")
+  ) {
+    const resposta = preencherTemplate(
+      "msg_quimicas",
+      `⚡ *Procedimentos Químicos & Colorações da {barbearia}:*\n\n{servicos_quimica}\n\n⚠️ *Para procedimentos químicos, recomendamos agendar com antecedência pelo Booksy:*\n👉 *{link_booksy}*`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 10. CORTE INFANTIL / KIDS
+  if (texto.includes("infantil") || texto.includes("criança") || texto.includes("crianca") || texto.includes("kids") || texto.includes("filho") || texto.includes("menino")) {
+    const resposta = preencherTemplate(
+      "msg_cortes_infantis",
+      `👶 *Cortes Infantis / Kids na {barbearia}:*\n\nTemos todo o cuidado e paciência para atender a criançada no melhor estilo!\n\n📲 *Agende seu horário pelo Booksy:*\n👉 *{link_booksy}*`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 11. LISTA DE BARBEIROS DA EQUIPE
+  if (
+    texto.includes("barbeiro") ||
+    texto.includes("equipe") ||
+    texto.includes("profissionais") ||
+    texto.includes("quem atende")
+  ) {
+    const resposta = preencherTemplate(
+      "msg_escolha_barbeiro",
+      `Com qual dos nossos profissionais você deseja ser atendido hoje? Digite o nome do barbeiro:\n\n{lista_barbeiros}\n\nAssim que você disser o nome, notificamos o barbeiro diretamente no WhatsApp dele! 💈📲`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // 12. FALAR COM ATENDENTE HUMANO
   if (
     texto === "7" ||
     texto === "9" ||
@@ -1779,39 +1891,18 @@ async function processarMensagemRobo(
     texto.includes("falar com alguem") ||
     texto.includes("falar com alguém") ||
     texto.includes("falar com uma pessoa") ||
-    texto.includes("falar com atendente") ||
-    texto.includes("ajuda") ||
-    texto.includes("duvida") ||
-    texto.includes("dúvida")
+    texto.includes("falar com atendente")
   ) {
-    const resposta = preencherTemplate("msg_atendimento_humano", "Já notificamos nossa equipe na {barbearia}. Responderemos em breve!");
+    const resposta = preencherTemplate(
+      "msg_atendimento_humano",
+      `Perfeito, *${nomeCliente}*! Já notificamos nossa equipe na *{barbearia}*. 👨‍💼\n\nComo nossos barbeiros podem estar em atendimento na cadeira agora, responderemos aqui em poucos minutos!\n\nSe for sobre agendamento, você também pode marcar direto no Booksy sem fila:\n👉 *{link_booksy}*`
+    );
     await enviarRespostaHumanizada(resposta);
     ativarPausaAtendimentoHumano(remoteJid, "Cliente solicitou atendente humano", extraInfo?.pushName, numeroLimpo);
     return;
   }
 
-  // SERVIÇOS DE BARBA
-  if (texto === "barba" || texto.includes("fazer barba") || texto.includes("fazer a barba") || texto.includes("aparar barba")) {
-    const resposta = preencherTemplate("msg_barba_terapia", "Confira nossos serviços de barba na {barbearia}:\n{servicos_barba}\nAgende: {link_booksy}");
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // CORTE INFANTIL / KIDS
-  if (texto.includes("infantil") || texto.includes("criança") || texto.includes("crianca") || texto.includes("kids") || texto.includes("filho")) {
-    const resposta = preencherTemplate("msg_cortes_infantis", "Corte Infantil na {barbearia}!\nAgende: {link_booksy}");
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // FORMAS DE PAGAMENTO
-  if (texto.includes("pagamento") || texto.includes("cartao") || texto.includes("cartão") || texto.includes("dinheiro")) {
-    const resposta = preencherTemplate("msg_pagamentos", "Aceitamos Pix ({pix}), cartões e dinheiro.");
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 10. VERIFICAR GATILHOS DE CONVERSAS PERSONALIZADAS CRIADAS PELO USUÁRIO
+  // 13. GATILHOS PERSONALIZADOS CADASTRADOS NO PAINEL
   for (const mRow of msgsRows) {
     if (mRow.gatilho && mRow.ativo !== 0) {
       const palavras = String(mRow.gatilho).split(",").map((p: string) => p.trim().toLowerCase()).filter(Boolean);
@@ -1824,32 +1915,30 @@ async function processarMensagemRobo(
     }
   }
 
-  // DEFAULT 1: SE O CLIENTE ENVIOU UMA SAUDAÇÃO CONHECIDA, EXIBE O MENU PRINCIPAL
-  const saudacoesPadrao = [
+  // 14. SAUDAÇÃO PURA (DISPARADA QUANDO O CLIENTE DIZ "OI", "OLÁ", "BOM DIA", SEM OUTRA PERGUNTA)
+  const saudacoesPuras = [
     "0", "oi", "ola", "olá", "oie", "opa", "salve", "fala", "e ai", "e aí", "eai", 
-    "bom dia", "boa tarde", "boa noite", "menu", "início", "inicio", "voltar", 
-    "voltar ao menu", "opcoes", "opções", "comecar", "começar", "#menu", "#bot"
+    "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", "menu", "início", "inicio", 
+    "voltar", "comecar", "começar", "#menu", "#bot"
   ];
-  // Não aceita texto vazio como saudação!
-  const ehSaudacao = saudacoesPadrao.includes(texto);
-
-  if (ehSaudacao) {
-    const resposta = preencherTemplate("msg_boas_vindas", "Fala parceiro! Bem-vindo à {barbearia}!\n1 - Agendar no Booksy: {link_booksy}");
+  if (saudacoesPuras.includes(texto)) {
+    const fallbackBoasVindas = `Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️\n\nComo posso te ajudar hoje?`;
+    const resposta = preencherTemplate("msg_boas_vindas", fallbackBoasVindas);
     await enviarRespostaHumanizada(resposta);
     return;
   }
 
-  // Se o texto for vazio (sem áudio ou mídia), ignora silenciosamente
+  // Se o texto for vazio (sem áudio nem mídia), encerra
   if (!texto) {
     return;
   }
 
-  // DEFAULT 2: SE NÃO É SAUDAÇÃO NEM OPÇÃO (CLIENTE ENVIOU DÚVIDA / MENSAGEM LIVRE):
-  // Avisa que a equipe humana foi notificada e pausa o robô para não ficar spammando o menu!
+  // 15. DEFAULT: SE NÃO FOI SAUDAÇÃO NEM PALAVRA-CHAVE CONHECIDA (MENSAGEM LIVRE / DÚVIDA)
+  // Encaminha amigavelmente para a equipe e pausa o robô para atendimento humano
   const respostaDuvida = preencherTemplate(
     "msg_duvida_humano",
-    "Opa, parceiro! 💈 Recebemos sua mensagem!\n\nComo você enviou uma dúvida ou solicitação direta, já avisei nossa equipe aqui no salão. Em instantes um dos nossos barbeiros vai te responder aqui diretamente! 👨‍💼\n\n📲 Se quiser adiantar e garantir seu horário no Booksy sem fila:\n👉 *{link_booksy}*\n\n_(Para consultar as opções automáticas a qualquer momento, basta digitar *menu*)_"
+    `Opa parceiro! 💈 Recebemos sua mensagem!\n\nJá notifiquei a equipe da *{barbearia}*. Em instantes um dos nossos barbeiros vai te responder aqui diretamente! 👨‍💼\n\n📲 Se quiser adiantar e garantir seu horário no Booksy sem fila:\n👉 *{link_booksy}*`
   );
   await enviarRespostaHumanizada(respostaDuvida);
-  ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou dúvida ou solicitação direta", extraInfo?.pushName, numeroLimpo);
+  ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou mensagem livre / dúvida", extraInfo?.pushName, numeroLimpo);
 }

@@ -41,6 +41,24 @@ export function getDb(): DatabaseSync {
     if (botCount < 15) {
       popularMensagensBot(dbInstance);
     }
+
+    // Atualização automática: se a mensagem de boas-vindas ainda for do modelo antigo com menu numerado, atualiza para o atendimento conversacional amigável
+    try {
+      dbInstance.prepare(`
+        UPDATE bot_mensagens 
+        SET mensagem = 'Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️\n\nComo posso te ajudar hoje?' 
+        WHERE id = 'msg_boas_vindas' AND (mensagem LIKE '%1️⃣%' OR mensagem LIKE '%Digite o *número*%' OR mensagem LIKE '%Como podemos te ajudar hoje? Digite%')
+      `).run();
+    } catch (e) {}
+
+    // Remover rodapé antigo de menu em templates existentes
+    try {
+      dbInstance.prepare(`
+        UPDATE bot_mensagens 
+        SET mensagem = REPLACE(mensagem, '\n\n_(Se quiser consultar as opções automáticas do menu a qualquer momento, basta digitar *menu*)_', '')
+        WHERE mensagem LIKE '%_(Se quiser consultar as opções automáticas%'
+      `).run();
+    } catch (e) {}
   }
 
   return dbInstance;
@@ -144,6 +162,13 @@ function initSchema(db: DatabaseSync) {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS bot_mensagens_cache (
+      id TEXT PRIMARY KEY,
+      remote_jid TEXT,
+      message_json TEXT,
+      criado_em INTEGER
+    );
+
     CREATE TABLE IF NOT EXISTS atendimentos_humanos (
       remote_jid TEXT PRIMARY KEY,
       numero TEXT,
@@ -212,25 +237,16 @@ export function popularMensagensBot(db: DatabaseSync) {
   const templates = [
     {
       id: "msg_boas_vindas",
-      titulo: "0️⃣ Menu Principal (Boas-Vindas)",
+      titulo: "👋 Boas-Vindas & Recepção Amigável",
       descricao: "Enviada automaticamente na primeira mensagem ou saudação de qualquer cliente",
-      categoria: "MENU",
-      gatilho: "oi, ola, início, menu, bom dia, boa tarde, boa noite, comecar",
+      categoria: "ATENDIMENTO",
+      gatilho: "oi, ola, olá, oie, opa, salve, bom dia, boa tarde, boa noite, comecar, fala, eai, e ai",
       ordem: 1,
       variaveis: "{cliente}, {barbearia}, {link_booksy}, {pix}",
       mensagem: 
 `Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️
 
-Como podemos te ajudar hoje? Digite o *número* da opção desejada:
-
-1️⃣ - *Agendar Horário Rápido (Booksy)*
-2️⃣ - *Tabela de Serviços & Plano VIP (Cortes, Barba e Químicas)*
-3️⃣ - *Falar com um Barbeiro da Equipe*
-4️⃣ - *Quantos cortes me restam? (Plano Mensal)*
-
-🔑 *Chave Pix Oficial:* *{pix}*
-
-_Ou envie sua dúvida diretamente que responderemos em instantes!_`
+Como posso te ajudar hoje?`
     },
     {
       id: "msg_booksy",
@@ -550,9 +566,7 @@ Deixe sua mensagem que responderemos assim que abrirmos! Obrigado pela preferên
 Como você enviou uma dúvida ou solicitação específica, já notifiquei a equipe da *{barbearia}*. Em instantes um dos nossos barbeiros vai te responder aqui diretamente! 👨‍💼
 
 📲 Se quiser adiantar e garantir seu horário no Booksy sem fila:
-👉 *{link_booksy}*
-
-_(Se quiser consultar as opções automáticas do menu a qualquer momento, basta digitar *menu*)_`
+👉 *{link_booksy}*`
     }
   ];
 
@@ -633,6 +647,8 @@ export function popularDadosIniciaisGM(db: DatabaseSync) {
   // Plano VIP Real da Barbearia
   const stmtP = db.prepare(`INSERT INTO planos (id, nome, preco_mensal, cortes_cabelo_inclusos, barbas_inclusas, inclui_sobrancelha, descricao, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`);
   stmtP.run('plano-corte-semanal-gm', 'Corte Semanal GM', 130.00, 4, 0, 0, '1 corte por semana (4 cortes no mês) + 10% de desconto em produtos');
+  stmtP.run('plano-vip-completo', 'VIP Completo (Cabelo & Barba)', 220.00, 4, 4, 1, 'Cortes e barbas semanais com sobrancelha inclusa');
+  stmtP.run('plano-duplo-corte', 'Corte Quinzenal (2x no mês)', 75.00, 2, 0, 0, '2 cortes no mês');
 
   // Assinantes VIPs Iniciais Reais
   const stmtM = db.prepare(`

@@ -1261,7 +1261,7 @@ export default function Dashboard() {
                   SQLite Local Ativo
                 </span>
                 <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide animate-pulse">
-                  v2.5.1 • WHATSAPP ESTÁVEL & RETRY EM MEMÓRIA
+                  v2.6.0 • ATENDIMENTO CONVERSACIONAL & NOTIFICAÇÕES
                 </span>
               </div>
             </div>
