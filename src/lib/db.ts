@@ -59,6 +59,43 @@ export function getDb(): DatabaseSync {
         WHERE mensagem LIKE '%_(Se quiser consultar as opções automáticas%'
       `).run();
     } catch (e) {}
+
+    // Garantir templates novos dos comandos #menu e #sair
+    try {
+      dbInstance.prepare(`
+        INSERT OR IGNORE INTO bot_mensagens (
+          id, titulo, descricao, categoria, mensagem, variaveis_disponiveis, gatilho, ordem, ativo
+        ) VALUES (
+          'msg_menu_opcoes',
+          '📋 Menu de Opções Rápido (#menu)',
+          'Enviada quando o cliente solicita ver o menu completo (#menu)',
+          'MENU',
+          '💈 *Menu de Atendimento - {barbearia}* 💈\n\nEscolha o que você precisa ou digite livremente sua dúvida:\n\n1️⃣ *Agendar Horário sem Fila (Booksy):*\n👉 {link_booksy}\n\n2️⃣ *Tabela de Preços & Serviços:*\nEnvie *preço* ou *serviços* para ver valores de corte, barba e químicas.\n\n3️⃣ *Planos Mensalistas VIP:*\nEnvie *planos* para conhecer nossos planos de corte semanal com desconto!\n\n4️⃣ *Endereço & Localização:*\nEnvie *endereço* ou *onde fica* para receber o mapa no GPS.\n\n5️⃣ *Horários de Funcionamento:*\nEnvie *horário* para consultar nosso horário de atendimento.\n\n6️⃣ *Chave Pix Oficial:*\nEnvie *pix* para ver os dados de pagamento.\n\n7️⃣ *Consultar seus Créditos (Mensalista):*\nEnvie *saldo* para consultar seus cortes restantes no mês.\n\n8️⃣ *Falar com a Equipe Humana:*\nEnvie *atendente* ou o nome do seu barbeiro (ex: *falar com Erick*).\n\n_💡 Você não precisa digitar números, basta escrever o que deseja que te respondo na hora!_',
+          '{cliente}, {barbearia}, {link_booksy}, {pix}, {horario}',
+          '#menu, menu, #opcoes, #opções, opcoes, opções, #ajuda',
+          19,
+          1
+        )
+      `).run();
+    } catch (e) {}
+
+    try {
+      dbInstance.prepare(`
+        INSERT OR IGNORE INTO bot_mensagens (
+          id, titulo, descricao, categoria, mensagem, variaveis_disponiveis, gatilho, ordem, ativo
+        ) VALUES (
+          'msg_robo_reativado_cliente',
+          '🤖 Retomada do Robô pelo Cliente (#sair)',
+          'Enviada ao cliente quando ele digita #sair para cancelar a espera do barbeiro e voltar para o robô',
+          'ATENDIMENTO',
+          '🤖 *Atendimento Automático Retomado!* 💈\n\nCancelei a espera pelo barbeiro e estou de volta à sua disposição!\n\nComo posso te ajudar agora? Você pode perguntar sobre agendamento, valores dos serviços, localização ou digitar *#menu* para ver opções.',
+          '{cliente}, {barbearia}, {link_booksy}',
+          '#sair, sair, #voltar, cancelar espera',
+          20,
+          1
+        )
+      `).run();
+    } catch (e) {}
   }
 
   return dbInstance;
@@ -567,6 +604,60 @@ Como você enviou uma dúvida ou solicitação específica, já notifiquei a equ
 
 📲 Se quiser adiantar e garantir seu horário no Booksy sem fila:
 👉 *{link_booksy}*`
+    },
+    {
+      id: "msg_menu_opcoes",
+      titulo: "📋 Menu de Opções Rápido (#menu)",
+      descricao: "Enviada quando o cliente solicita ver o menu completo (#menu)",
+      categoria: "MENU",
+      gatilho: "#menu, menu, #opcoes, #opções, opcoes, opções, #ajuda",
+      ordem: 19,
+      variaveis: "{cliente}, {barbearia}, {link_booksy}, {pix}, {horario}",
+      mensagem: 
+`💈 *Menu de Atendimento - {barbearia}* 💈
+
+Escolha o que você precisa ou digite livremente sua dúvida:
+
+1️⃣ *Agendar Horário sem Fila (Booksy):*
+👉 {link_booksy}
+
+2️⃣ *Tabela de Preços & Serviços:*
+Envie *preço* ou *serviços* para ver valores de corte, barba e químicas.
+
+3️⃣ *Planos Mensalistas VIP:*
+Envie *planos* para conhecer nossos planos de corte semanal com desconto!
+
+4️⃣ *Endereço & Localização:*
+Envie *endereço* ou *onde fica* para receber o mapa no GPS.
+
+5️⃣ *Horários de Funcionamento:*
+Envie *horário* para consultar nosso horário de atendimento.
+
+6️⃣ *Chave Pix Oficial:*
+Envie *pix* para ver os dados de pagamento.
+
+7️⃣ *Consultar seus Créditos (Mensalista):*
+Envie *saldo* para consultar seus cortes restantes no mês.
+
+8️⃣ *Falar com a Equipe Humana:*
+Envie *atendente* ou o nome do seu barbeiro (ex: *falar com Erick*).
+
+_💡 Você não precisa digitar números, basta escrever o que deseja que te respondo na hora!_`
+    },
+    {
+      id: "msg_robo_reativado_cliente",
+      titulo: "🤖 Retomada do Robô pelo Cliente (#sair)",
+      descricao: "Enviada ao cliente quando ele digita #sair para cancelar a espera do barbeiro e voltar para o robô",
+      categoria: "ATENDIMENTO",
+      gatilho: "#sair, sair, #voltar, cancelar espera",
+      ordem: 20,
+      variaveis: "{cliente}, {barbearia}, {link_booksy}",
+      mensagem: 
+`🤖 *Atendimento Automático Retomado!* 💈
+
+Cancelei a espera pelo barbeiro e estou de volta à sua disposição!
+
+Como posso te ajudar agora? Você pode perguntar sobre agendamento, valores dos serviços, localização ou digitar *#menu* para ver opções.`
     }
   ];
 

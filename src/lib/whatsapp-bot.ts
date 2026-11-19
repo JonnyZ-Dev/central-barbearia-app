@@ -131,10 +131,13 @@ function ehComandoReativarBot(texto: string): boolean {
   if (!t) return false;
   if (
     [
+      "#sair", "sair", "#cancelar", "cancelar",
+      "#menu", "menu", "#opcoes", "#opções", "opcoes", "opções", "#ajuda", "ajuda",
+      "#ativar", "ativar", "#reativar", "reativar", "#bot",
       "oi", "ola", "olá", "oie", "opa", "salve", "fala", "eai", "e ai", 
       "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", 
-      "menu", "início", "inicio", "voltar", "voltar ao menu", "0", 
-      "#bot", "#menu", "#voltar", "comecar", "começar"
+      "início", "inicio", "voltar", "voltar ao menu", "0", 
+      "#voltar", "comecar", "começar"
     ].includes(t)
   ) {
     return true;
@@ -774,8 +777,10 @@ export async function iniciarWhatsAppBot() {
               ""
             ).trim().toLowerCase();
 
-            // COMANDO 1: INICIAR ATENDIMENTO MANUALMENTE
+            // COMANDO 1: INICIAR ATENDIMENTO MANUALMENTE (#INICIAR)
             if (
+              textoAtendente === "#iniciar" ||
+              textoAtendente === "iniciar" ||
               textoAtendente === "iniciar atendimento" ||
               textoAtendente === "iniciando atendimento" ||
               textoAtendente === "#atender" ||
@@ -804,8 +809,12 @@ export async function iniciarWhatsAppBot() {
               continue;
             }
 
-            // COMANDO 2: FINALIZAR ATENDIMENTO MANUALMENTE
+            // COMANDO 2: REATIVAR O ROBÔ NA CONVERSA (#ATIVAR)
             if (
+              textoAtendente === "#ativar" ||
+              textoAtendente === "ativar" ||
+              textoAtendente === "#reativar" ||
+              textoAtendente === "reativar" ||
               textoAtendente === "finalizar atendimento" ||
               textoAtendente === "encerrar atendimento" ||
               textoAtendente === "#finalizar" ||
@@ -1573,6 +1582,65 @@ async function processarMensagemRobo(
     );
     await enviarRespostaHumanizada(resposta);
     ativarPausaAtendimentoHumano(remoteJid, "Cliente avisou sobre horário / cancelamento", extraInfo?.pushName, numeroLimpo);
+    return;
+  }
+
+  // COMANDO #SAIR (CLIENTE CANCELA ESPERA E REATIVA O ROBÔ IMEDIATAMENTE)
+  if (
+    texto === "#sair" ||
+    texto === "sair" ||
+    texto === "#cancelar espera" ||
+    texto === "cancelar espera" ||
+    texto === "voltar pro bot" ||
+    texto === "voltar para o bot"
+  ) {
+    removerPausaAtendimentoHumano(remoteJid);
+    const resposta = preencherTemplate(
+      "msg_robo_reativado_cliente",
+      `🤖 *Atendimento Automático Retomado!* 💈\n\nCancelei a espera pelo barbeiro e estou de volta à sua disposição!\n\nComo posso te ajudar agora? Você pode perguntar sobre agendamento, valores dos serviços, localização ou digitar *#menu* para ver opções.`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // COMANDO #MENU (EXIBE O MENU COMPLETO DE OPÇÕES E ATALHOS)
+  if (
+    texto === "#menu" ||
+    texto === "menu" ||
+    texto === "#opcoes" ||
+    texto === "#opções" ||
+    texto === "opcoes" ||
+    texto === "opções" ||
+    texto === "#ajuda"
+  ) {
+    removerPausaAtendimentoHumano(remoteJid);
+    const resposta = preencherTemplate(
+      "msg_menu_opcoes",
+      `💈 *Menu de Atendimento - {barbearia}* 💈\n\nEscolha o que você precisa ou digite livremente sua dúvida:\n\n1️⃣ *Agendar Horário sem Fila (Booksy):*\n👉 {link_booksy}\n\n2️⃣ *Tabela de Preços & Serviços:*\nEnvie *preço* ou *serviços* para ver valores de corte, barba e químicas.\n\n3️⃣ *Planos Mensalistas VIP:*\nEnvie *planos* para conhecer nossos planos de corte semanal com desconto!\n\n4️⃣ *Endereço & Localização:*\nEnvie *endereço* ou *onde fica* para receber o mapa no GPS.\n\n5️⃣ *Horários de Funcionamento:*\nEnvie *horário* para consultar nosso horário de atendimento.\n\n6️⃣ *Chave Pix Oficial:*\nEnvie *pix* para ver os dados de pagamento.\n\n7️⃣ *Consultar seus Créditos (Mensalista):*\nEnvie *saldo* para consultar seus cortes restantes no mês.\n\n8️⃣ *Falar com a Equipe Humana:*\nEnvie *atendente* ou o nome do seu barbeiro (ex: *falar com Erick*).\n\n_💡 Você não precisa digitar números, basta escrever o que deseja que te respondo na hora!_`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // COMANDO #INICIAR (ASSUMIR ATENDIMENTO / PAUSAR O ROBÔ NESTA CONVERSA)
+  if (texto === "#iniciar" || texto === "#pausar") {
+    ativarPausaAtendimentoHumano(remoteJid, "Atendimento humano assumido via #iniciar", extraInfo?.pushName, numeroLimpo);
+    const resposta = preencherTemplate(
+      "msg_humano_assumiu",
+      `👨‍💼 *Atendimento Iniciado:* Nosso profissional da equipe *{barbearia}* acabou de assumir a conversa e falará diretamente com você a partir de agora! 💈`
+    );
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // COMANDO #ATIVAR (REATIVAR ROBÔ NESTA CONVERSA)
+  if (texto === "#ativar" || texto === "#reativar") {
+    removerPausaAtendimentoHumano(remoteJid);
+    const resposta = preencherTemplate(
+      "msg_fim_atendimento",
+      `🤖 *Atendimento Automático Reativado!* O assistente virtual voltou a atender esta conversa normalmente. Se precisar de algo, estamos à disposição! 💈`
+    );
+    await enviarRespostaHumanizada(resposta);
     return;
   }
 
