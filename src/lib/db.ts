@@ -120,6 +120,9 @@ function initSchema(db: DatabaseSync) {
       mensagem_boas_vindas TEXT,
       horario_funcionamento TEXT,
       senha_admin TEXT DEFAULT 'admin123',
+      gemini_api_key TEXT,
+      gemini_ativo INTEGER DEFAULT 1,
+      gemini_prompt_personalizado TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -244,6 +247,9 @@ function initSchema(db: DatabaseSync) {
     try { db.exec(`ALTER TABLE configuracoes ADD COLUMN licenca_valor REAL DEFAULT 150;`); } catch (e) {}
     try { db.exec(`ALTER TABLE configuracoes ADD COLUMN licenca_vencimento TEXT;`); } catch (e) {}
     try { db.exec(`ALTER TABLE configuracoes ADD COLUMN licenca_ultimo_check TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE configuracoes ADD COLUMN gemini_api_key TEXT;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE configuracoes ADD COLUMN gemini_ativo INTEGER DEFAULT 1;`); } catch (e) {}
+  try { db.exec(`ALTER TABLE configuracoes ADD COLUMN gemini_prompt_personalizado TEXT;`); } catch (e) {}
   try { db.exec(`ALTER TABLE bot_mensagens ADD COLUMN ordem INTEGER DEFAULT 0;`); } catch (e) {}
   try { db.exec(`ALTER TABLE bot_mensagens ADD COLUMN gatilho TEXT;`); } catch (e) {}
 

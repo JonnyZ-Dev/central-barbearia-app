@@ -31,7 +31,10 @@ export async function PUT(req: Request) {
       senha_admin,
       dias_aviso_renovacao,
       aviso_renovacao_ativo,
-      tempo_pausa_humano_minutos
+      tempo_pausa_humano_minutos,
+      gemini_api_key,
+      gemini_ativo,
+      gemini_prompt_personalizado
     } = data;
 
     const latVal = (latitude !== undefined && latitude !== null && latitude !== "") ? Number(latitude) : null;
@@ -39,6 +42,9 @@ export async function PUT(req: Request) {
     const diasAvisoVal = (dias_aviso_renovacao !== undefined && dias_aviso_renovacao !== null && dias_aviso_renovacao !== "") ? Math.max(1, Number(dias_aviso_renovacao)) : 3;
     const avisoAtivoVal = aviso_renovacao_ativo !== undefined ? (Number(aviso_renovacao_ativo) ? 1 : 0) : 1;
     const pausaMinutosVal = (tempo_pausa_humano_minutos !== undefined && tempo_pausa_humano_minutos !== null && tempo_pausa_humano_minutos !== "") ? Math.max(5, Number(tempo_pausa_humano_minutos)) : 120;
+    const geminiAtivoVal = gemini_ativo !== undefined ? (Number(gemini_ativo) ? 1 : 0) : 1;
+    const geminiKeyVal = gemini_api_key !== undefined ? String(gemini_api_key || "").trim() : null;
+    const geminiPromptVal = gemini_prompt_personalizado !== undefined ? String(gemini_prompt_personalizado || "").trim() : null;
 
     if (senha_admin && senha_admin.trim().length >= 4) {
       db.prepare(`
@@ -56,6 +62,9 @@ export async function PUT(req: Request) {
           dias_aviso_renovacao = ?,
           aviso_renovacao_ativo = ?,
           tempo_pausa_humano_minutos = ?,
+          gemini_api_key = COALESCE(?, gemini_api_key),
+          gemini_ativo = ?,
+          gemini_prompt_personalizado = COALESCE(?, gemini_prompt_personalizado),
           senha_admin = ?,
           updated_at = CURRENT_TIMESTAMP
         WHERE id = 'default'
@@ -73,6 +82,9 @@ export async function PUT(req: Request) {
         diasAvisoVal,
         avisoAtivoVal,
         pausaMinutosVal,
+        geminiKeyVal,
+        geminiAtivoVal,
+        geminiPromptVal,
         senha_admin.trim()
       );
     } else {
@@ -91,6 +103,9 @@ export async function PUT(req: Request) {
           dias_aviso_renovacao = ?,
           aviso_renovacao_ativo = ?,
           tempo_pausa_humano_minutos = ?,
+          gemini_api_key = COALESCE(?, gemini_api_key),
+          gemini_ativo = ?,
+          gemini_prompt_personalizado = COALESCE(?, gemini_prompt_personalizado),
           updated_at = CURRENT_TIMESTAMP
         WHERE id = 'default'
       `).run(
@@ -106,7 +121,10 @@ export async function PUT(req: Request) {
         horario_funcionamento,
         diasAvisoVal,
         avisoAtivoVal,
-        pausaMinutosVal
+        pausaMinutosVal,
+        geminiKeyVal,
+        geminiAtivoVal,
+        geminiPromptVal
       );
     }
 

@@ -9,6 +9,7 @@ import makeWASocket, {
 } from "@whiskeysockets/baileys";
 import { NodeCache } from "@cacheable/node-cache";
 import { getDb } from "./db";
+import { gerarRespostaGemini, limparHistoricoChat } from "./gemini";
 
 const AUTH_DIR = path.join(process.cwd(), "database", "auth_info_baileys");
 
@@ -1689,6 +1690,19 @@ async function processarMensagemRobo(
         `Perfeito, *${nomeCliente}*! Acabei de mandar um aviso particular no WhatsApp do *${b.nome}* avisando que você quer falar com ele! 💈📲\n\nAssim que ele liberar a cadeira, ele responderá aqui.\n\nSe preferir agendar no Booksy para garantir seu horário sem fila:\n👉 *${linkBooksy}*`
       );
       ativarPausaAtendimentoHumano(remoteJid, `Cliente solicitou atendimento com o barbeiro ${b.nome}`, extraInfo?.pushName, numeroLimpo);
+      return;
+    }
+  }
+
+  // =========================================================================
+  // ATENDIMENTO INTELIGENTE COM IA (GOOGLE GEMINI FLASH)
+  // Se a IA estiver ativa e com chave configurada, ela assume o atendimento
+  // com respostas ultra-curtas, humanizadas e naturais baseadas nos dados da barbearia.
+  // =========================================================================
+  if (config.gemini_ativo && config.gemini_api_key && String(config.gemini_api_key).trim().length > 10) {
+    const respostaIa = await gerarRespostaGemini(texto, remoteJid, nomeCliente);
+    if (respostaIa && respostaIa.trim().length > 0) {
+      await enviarRespostaHumanizada(respostaIa);
       return;
     }
   }

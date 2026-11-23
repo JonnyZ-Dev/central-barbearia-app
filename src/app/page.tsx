@@ -49,9 +49,24 @@ import {
   FileSpreadsheet,
   Upload,
   FileDown,
-  GitBranch
+  GitBranch,
+  Bot
 } from "lucide-react";
 import { formatarTelefoneBR, validarTelefoneBR } from "@/lib/formatters";
+
+const PROMPT_PADRAO_GEMINI = `Você é o recepcionista virtual inteligente e gente boa da barbearia.
+Seu objetivo é atender clientes no WhatsApp de forma natural, acolhedora e amigável, exatamente como um barbeiro ou recepcionista real falaria.
+
+DIRETRIZES FUNDAMENTAIS DE ESTILO:
+1. RESPOSTAS ULTRA-CURTAS E DIRETAS: Responda em no máximo 1 ou 2 frases curtas. Jamais envie textões, relatórios ou listas longas com dezenas de emojis.
+2. TOM HUMANO E BRASILEIRO: Use linguagem descontraída, educada e jovem típica de barbearia (ex: "Fala meu querido!", "Opa, tudo bem, irmão?", "Tranquilo por aí?").
+3. AGENDAMENTO: Quando o cliente quiser agendar ou perguntar horários vagos, convide ele com simpatia e forneça o link oficial do Booksy para ele escolher o barbeiro e horário sem fila.
+4. PREÇOS E SERVIÇOS: Quando perguntarem preço ou serviço, responda especificamente sobre o que foi perguntado.
+5. ENDEREÇO E LOCALIZAÇÃO: Se perguntarem onde fica, informe o endereço com clareza.
+6. PAGAMENTOS: Se perguntarem como pagar ou a chave Pix, informe a chave Pix oficial cadastrada.
+7. BARBEIROS: Se perguntarem por um barbeiro específico, confirme que ele atende na casa e direcione para o Booksy.
+8. NÃO INVENTE: Use apenas as informações oficiais cadastradas fornecidas no contexto. Nunca invente preços ou dados inexistentes.
+9. ATENDIMENTO HUMANO: Se o cliente tiver uma dúvida muito específica ou problema, avise com carinho que a equipe vai responder em breve.`;
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);
@@ -93,6 +108,11 @@ export default function Dashboard() {
   } | null>(null);
   const [verificandoAtualizacao, setVerificandoAtualizacao] = useState(false);
   const [aplicandoAtualizacao, setAplicandoAtualizacao] = useState(false);
+
+  // Estados da IA Google Gemini
+  const [testandoGemini, setTestandoGemini] = useState(false);
+  const [resultadoGemini, setResultadoGemini] = useState<{ success: boolean; msg: string } | null>(null);
+  const [mostrarKeyGemini, setMostrarKeyGemini] = useState(false);
 
   // Estados do WhatsApp e Robô
   const [botStatus, setBotStatus] = useState<{ status: string; qr: string | null; numero: string | null; pausado?: boolean }>({ status: "DESCONECTADO", qr: null, numero: null, pausado: false });
@@ -1004,6 +1024,37 @@ export default function Dashboard() {
     }
   };
 
+  // Testar conexão com a IA Google Gemini
+  const testarChaveGemini = async () => {
+    const key = data?.config?.gemini_api_key?.trim();
+    if (!key) {
+      mostrarFeedback("Informe uma chave de API do Google Gemini para testar.", "error");
+      return;
+    }
+    setTestandoGemini(true);
+    setResultadoGemini(null);
+    try {
+      const res = await fetch("/api/gemini/testar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: key })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setResultadoGemini({ success: true, msg: json.message || "Conexão com Google Gemini Flash estabelecida com sucesso!" });
+        mostrarFeedback("Chave do Gemini validada com sucesso!");
+      } else {
+        setResultadoGemini({ success: false, msg: json.error || "Chave inválida ou erro na API do Google." });
+        mostrarFeedback(json.error || "Falha no teste da chave do Gemini", "error");
+      }
+    } catch (e: any) {
+      setResultadoGemini({ success: false, msg: "Erro ao comunicar com o servidor: " + (e?.message || e) });
+      mostrarFeedback("Erro na requisição de teste", "error");
+    } finally {
+      setTestandoGemini(false);
+    }
+  };
+
   // Restaurar dados originais da GM
   const restaurarDadosGM = async () => {
     if (!confirm("Deseja importar todos os 28 serviços, barbeiros e planos originais da GM Barbershop para o SQLite?")) return;
@@ -1261,7 +1312,7 @@ export default function Dashboard() {
                   SQLite Local Ativo
                 </span>
                 <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide animate-pulse">
-                  v2.6.1 • COMANDOS #MENU, #SAIR, #INICIAR & #ATIVAR
+                  v2.7.0 • INTELIGÊNCIA ARTIFICIAL GEMINI PRONTA
                 </span>
               </div>
             </div>
@@ -3221,6 +3272,165 @@ export default function Dashboard() {
                     <li><strong>Pausa automática inteligente:</strong> Qualquer mensagem normal que o atendente digitar no celular já pausa o robô para evitar que ele fale por cima.</li>
                     <li><strong>Dúvidas diretas do cliente:</strong> Se o cliente mandar uma dúvida fora do menu, o robô avisa que a equipe vai responder e entra em pausa de espera.</li>
                     <li><strong>Reativação pelo painel:</strong> Você também pode clicar no botão <strong>Reativar</strong> na aba <em>Robô do WhatsApp</em> a qualquer momento.</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Seção Inteligência Artificial Google Gemini */}
+              <div className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-900/90 to-zinc-950 border border-amber-500/30 rounded-2xl space-y-4 shadow-xl shadow-amber-500/5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-white flex items-center gap-2">
+                        Inteligência Artificial (Google Gemini Flash)
+                        <span className="text-[10px] bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono font-bold uppercase">
+                          Atendimento Humanizado
+                        </span>
+                      </h4>
+                      <p className="text-xs text-zinc-400">
+                        Respostas curtas, descontraídas e acolhedoras para clientes no WhatsApp, sem menus engessados
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${
+                      data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                        : !data?.config?.gemini_api_key?.trim()
+                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                          : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                    }`}>
+                      {data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
+                        ? "● IA Pronta & Ativa"
+                        : !data?.config?.gemini_api_key?.trim()
+                          ? "○ Aguardando API Key"
+                          : "✕ IA Desativada"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setData({
+                        ...data,
+                        config: { ...data.config, gemini_ativo: data?.config?.gemini_ativo === 0 ? 1 : 0 }
+                      })}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
+                        data?.config?.gemini_ativo !== 0
+                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30"
+                          : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
+                      }`}
+                    >
+                      {data?.config?.gemini_ativo !== 0 ? "Ligado" : "Desligado"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Chave de API */}
+                <div className="space-y-2 pt-1">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1.5">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                      Chave de API do Google AI Studio (Gratuita - R$ 0,00)
+                    </label>
+                    <a
+                      href="https://aistudio.google.com/apikey"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-amber-400 hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      Criar Chave Gratuita no Google AI Studio
+                    </a>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type={mostrarKeyGemini ? "text" : "password"}
+                        value={data?.config?.gemini_api_key || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, gemini_api_key: e.target.value } })}
+                        placeholder="Cole aqui a chave de API (Ex: AIzaSy...)"
+                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pr-10 text-sm text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setMostrarKeyGemini(!mostrarKeyGemini)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
+                        title={mostrarKeyGemini ? "Ocultar Chave" : "Exibir Chave"}
+                      >
+                        {mostrarKeyGemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={testandoGemini || !data?.config?.gemini_api_key?.trim()}
+                      onClick={testarChaveGemini}
+                      className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-zinc-700 transition shadow-sm whitespace-nowrap"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${testandoGemini ? "animate-spin" : ""}`} />
+                      {testandoGemini ? "Testando Conexão..." : "Testar Chave"}
+                    </button>
+                  </div>
+
+                  {resultadoGemini && (
+                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                      resultadoGemini.success
+                        ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                        : "bg-red-950/40 border-red-500/30 text-red-300"
+                    }`}>
+                      {resultadoGemini.success ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                      <span>{resultadoGemini.msg}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Prompt Personalizado */}
+                <div className="space-y-2 pt-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
+                        Instruções de Personalidade (Prompt do Barbeiro)
+                      </label>
+                      <p className="text-[11px] text-zinc-400 mt-0.5">
+                        Defina como a IA deve conversar com seus clientes. Preços, serviços e Booksy são inseridos automaticamente em tempo real.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: PROMPT_PADRAO_GEMINI } });
+                        mostrarFeedback("Prompt padrão restaurado!");
+                      }}
+                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition flex-shrink-0"
+                    >
+                      <RotateCcw className="w-3 h-3 text-amber-400" />
+                      Restaurar Padrão
+                    </button>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    value={data?.config?.gemini_prompt_personalizado || ""}
+                    onChange={(e) => setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: e.target.value } })}
+                    placeholder={PROMPT_PADRAO_GEMINI}
+                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 font-mono leading-relaxed resize-y"
+                  />
+                </div>
+
+                {/* Informações e Garantias */}
+                <div className="p-3.5 bg-zinc-950/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Como a Inteligência Artificial opera no WhatsApp:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
+                    <li><strong className="text-zinc-200">100% Gratuito:</strong> A cota oficial do Google AI Studio para o modelo <em>Gemini 1.5 Flash</em> permite até 1.500 mensagens/dia (mais de 45.000 mensagens/mês com custo zero).</li>
+                    <li><strong className="text-zinc-200">Fallback Automático:</strong> Se a chave não for configurada ou a conexão com o Google demorar mais de 4,5s, o robô responde instantaneamente pelas palavras-chave tradicionais (Booksy, tabela de preços, endereço, Pix).</li>
+                    <li><strong className="text-zinc-200">Memória de Conversa:</strong> Lembra das últimas 6 mensagens trocadas com cada cliente para manter a conversa fluida e natural.</li>
+                    <li><strong className="text-zinc-200">Prioridade Total aos Comandos:</strong> Os comandos <code>#menu</code>, <code>#sair</code>, <code>#iniciar</code> e <code>#ativar</code> têm prioridade máxima e funcionam de imediato.</li>
                   </ul>
                 </div>
               </div>
