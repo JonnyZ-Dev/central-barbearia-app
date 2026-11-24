@@ -2178,7 +2178,7 @@ export default function Dashboard() {
                 {data?.banco?.caminho || "E:\\ChatBot_MensalistasAPP\\database\\barbearia.db"}
               </div>
               <p className="text-xs text-zinc-400">
-                💡 <strong>Como inspecionar fora do sistema:</strong> Você pode abrir esse arquivo direto no seu computador usando o programa gratuito <strong>DB Browser for SQLite</strong> ou a extensão SQLite do VS Code. Para fazer backup, basta copiar esse arquivo para onde quiser!
+                💡 <strong>Como inspecionar fora do sistema:</strong> Você pode abrir esse arquivo direto no seu computador usando o programa <strong>DB Browser for SQLite</strong> ou a extensão SQLite do VS Code. Para fazer backup, basta copiar esse arquivo para onde quiser!
               </p>
             </div>
 
@@ -2256,7 +2256,7 @@ export default function Dashboard() {
                   <MessageSquare className="w-6 h-6 text-emerald-400" /> Robô de Atendimento WhatsApp
                 </h2>
                 <p className="text-sm text-zinc-400 mt-0.5">
-                  Conexão local 100% gratuita (sem mensalidade de API), com editor de mensagens e sincronização no SQLite.
+                  Conexão local direta via WhatsApp, com editor de mensagens e sincronização em tempo real.
                 </p>
               </div>
 
@@ -3332,17 +3332,8 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1.5">
                       <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                      Chave de API do Google AI Studio (Gratuita - R$ 0,00)
+                      Chave de Integração da Inteligência Artificial
                     </label>
-                    <a
-                      href="https://aistudio.google.com/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[11px] text-amber-400 hover:underline flex items-center gap-1 font-semibold"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      Criar Chave Gratuita no Google AI Studio
-                    </a>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-2">
@@ -3351,7 +3342,7 @@ export default function Dashboard() {
                         type={mostrarKeyGemini ? "text" : "password"}
                         value={data?.config?.gemini_api_key || ""}
                         onChange={(e) => setData({ ...data, config: { ...data.config, gemini_api_key: e.target.value } })}
-                        placeholder="Cole aqui a chave de API (Ex: AIzaSy...)"
+                        placeholder="Cole aqui a chave de ativação da IA..."
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pr-10 text-sm text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
                       />
                       <button
@@ -3427,7 +3418,7 @@ export default function Dashboard() {
                     <span>Como a Inteligência Artificial opera no WhatsApp:</span>
                   </div>
                   <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
-                    <li><strong className="text-zinc-200">100% Gratuito:</strong> A cota oficial do Google AI Studio para o modelo <em>Gemini 1.5 Flash</em> permite até 1.500 mensagens/dia (mais de 45.000 mensagens/mês com custo zero).</li>
+                    <li><strong className="text-zinc-200">Alta Performance & Capacidade:</strong> Processamento em nuvem de alta velocidade preparado para atender grandes volumes de mensagens mensais em tempo real.</li>
                     <li><strong className="text-zinc-200">Fallback Automático:</strong> Se a chave não for configurada ou a conexão com o Google demorar mais de 4,5s, o robô responde instantaneamente pelas palavras-chave tradicionais (Booksy, tabela de preços, endereço, Pix).</li>
                     <li><strong className="text-zinc-200">Memória de Conversa:</strong> Lembra das últimas 6 mensagens trocadas com cada cliente para manter a conversa fluida e natural.</li>
                     <li><strong className="text-zinc-200">Prioridade Total aos Comandos:</strong> Os comandos <code>#menu</code>, <code>#sair</code>, <code>#iniciar</code> e <code>#ativar</code> têm prioridade máxima e funcionam de imediato.</li>
