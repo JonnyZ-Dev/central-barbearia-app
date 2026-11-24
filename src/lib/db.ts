@@ -217,7 +217,21 @@ function initSchema(db: DatabaseSync) {
       iniciado_em TEXT,
       expira_em INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS conversas_whatsapp (
+      remote_jid TEXT PRIMARY KEY,
+      numero TEXT NOT NULL,
+      nome TEXT,
+      ultima_mensagem TEXT,
+      ultimo_remetente TEXT DEFAULT 'CLIENTE',
+      status TEXT DEFAULT 'IA',
+      motivo_pausa TEXT,
+      atualizado_em INTEGER,
+      criado_em INTEGER
+    );
   `);
+
+  try { db.exec(`CREATE INDEX IF NOT EXISTS idx_conversas_atualizado ON conversas_whatsapp(atualizado_em DESC);`); } catch (e) {}
 
   // Migrações de colunas caso antigo
   try { db.exec(`ALTER TABLE mensalistas ADD COLUMN barbas_restantes INTEGER DEFAULT 0;`); } catch (e) {}

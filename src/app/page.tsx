@@ -50,7 +50,10 @@ import {
   Upload,
   FileDown,
   GitBranch,
-  Bot
+  Bot,
+  MessageCircle,
+  Headphones,
+  Filter
 } from "lucide-react";
 import { formatarTelefoneBR, validarTelefoneBR } from "@/lib/formatters";
 
@@ -72,7 +75,7 @@ DIRETRIZES FUNDAMENTAIS DE COMPORTAMENTO:
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"mensalistas" | "planos" | "servicos" | "usuarios" | "whatsapp" | "banco" | "config">("mensalistas");
+  const [activeTab, setActiveTab] = useState<"mensalistas" | "conversas" | "planos" | "servicos" | "usuarios" | "whatsapp" | "banco" | "config">("mensalistas");
   const [searchTerm, setSearchTerm] = useState("");
   const [categoriaFiltroServicos, setCategoriaFiltroServicos] = useState<string>("TODAS");
   const [buscaServico, setBuscaServico] = useState<string>("");
@@ -114,6 +117,16 @@ export default function Dashboard() {
   const [testandoGemini, setTestandoGemini] = useState(false);
   const [resultadoGemini, setResultadoGemini] = useState<{ success: boolean; msg: string } | null>(null);
   const [mostrarKeyGemini, setMostrarKeyGemini] = useState(false);
+
+  // Estados do Gerenciador de Conversas & Atendimento (IA vs Humano)
+  const [conversas, setConversas] = useState<any[]>([]);
+  const [filtroStatusConversa, setFiltroStatusConversa] = useState<"TODAS" | "IA" | "HUMANO">("TODAS");
+  const [buscaConversa, setBuscaConversa] = useState("");
+  const [carregandoConversas, setCarregandoConversas] = useState(false);
+  const [acaoConversaLoading, setAcaoConversaLoading] = useState<string | null>(null);
+
+  // Sub-abas de Organização de Configurações
+  const [subTabConfig, setSubTabConfig] = useState<"todas" | "perfil" | "ia" | "localizacao" | "horarios" | "automacoes" | "seguranca" | "atualizacoes">("todas");
 
   // Estados do WhatsApp e Robô
   const [botStatus, setBotStatus] = useState<{ status: string; qr: string | null; numero: string | null; pausado?: boolean }>({ status: "DESCONECTADO", qr: null, numero: null, pausado: false });
@@ -381,6 +394,14 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    carregarConversas();
+    const intervalConversas = setInterval(() => {
+      carregarConversas();
+    }, 4000);
+    return () => clearInterval(intervalConversas);
+  }, []);
+
+  useEffect(() => {
     if (activeTab === "config") {
       checarAtualizacoes(true);
     }
@@ -437,6 +458,51 @@ export default function Dashboard() {
   const mostrarFeedback = (msg: string, type: "success" | "error" = "success") => {
     setFeedback({ msg, type });
     setTimeout(() => setFeedback(null), 5000);
+  };
+
+  // Carregar lista de conversas do WhatsApp (IA vs Humano)
+  const carregarConversas = async (mostrarLoading = false) => {
+    try {
+      if (mostrarLoading) setCarregandoConversas(true);
+      const res = await fetch("/api/whatsapp/conversas");
+      const json = await res.json();
+      if (json.success) {
+        setConversas(json.conversas || []);
+      }
+    } catch (e) {
+      // Falha silenciosa no polling
+    } finally {
+      if (mostrarLoading) setCarregandoConversas(false);
+    }
+  };
+
+  // Alternar atendimento de uma conversa (Assumir Atendimento ou Passar para IA)
+  const alternarAtendimentoConversa = async (
+    remoteJid: string, 
+    novoStatus: "HUMANO" | "IA", 
+    nome?: string, 
+    numero?: string
+  ) => {
+    setAcaoConversaLoading(remoteJid);
+    try {
+      const acao = novoStatus === "HUMANO" ? "ASSUMIR" : "PASSAR_PARA_IA";
+      const res = await fetch("/api/whatsapp/conversas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ acao, remoteJid, nome, numero })
+      });
+      const json = await res.json();
+      if (json.success) {
+        mostrarFeedback(json.message);
+        carregarConversas();
+      } else {
+        mostrarFeedback(json.error || "Erro ao atualizar conversa", "error");
+      }
+    } catch (e: any) {
+      mostrarFeedback("Erro ao conectar com o servidor: " + e.message, "error");
+    } finally {
+      setAcaoConversaLoading(null);
+    }
   };
 
   // Carregar mensagens configuráveis do robô
@@ -1379,6 +1445,28 @@ export default function Dashboard() {
               <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${activeTab === "usuarios" ? "bg-black/20 text-black" : "bg-zinc-800 text-zinc-400"}`}>
                 {data?.barbeiros?.length || 0}
               </span>
+            </button>
+
+            <button 
+              onClick={() => setActiveTab("conversas")}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl transition ${
+                activeTab === "conversas" ? "bg-amber-500 text-black font-bold shadow-lg shadow-amber-500/20" : "text-zinc-400 hover:text-white hover:bg-zinc-800/60"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <MessageCircle className="w-4 h-4" />
+                Conversas & IA
+              </div>
+              {conversas.filter(c => c.status === "HUMANO").length > 0 ? (
+                <span className="text-[10px] bg-amber-500 text-black font-extrabold px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
+                  {conversas.filter(c => c.status === "HUMANO").length} em pausa
+                </span>
+              ) : (
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${activeTab === "conversas" ? "bg-black/20 text-black" : "bg-zinc-800 text-zinc-400"}`}>
+                  {conversas.length}
+                </span>
+              )}
             </button>
 
             <button 
@@ -2903,659 +2991,1184 @@ export default function Dashboard() {
 
 
         {/* ======================================================== */}
-        {/* ABA 7: CONFIGURAÇÕES GERAIS                              */}
+        {/* ABA: GERENCIADOR DE CONVERSAS & ATENDIMENTO (IA vs HUMANO) */}
+        {/* ======================================================== */}
+        {activeTab === "conversas" && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Cabeçalho */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-1">
+              <div>
+                <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
+                  <MessageCircle className="w-6 h-6 text-amber-400" />
+                  Painel de Conversas & Atendimento
+                </h2>
+                <p className="text-sm text-zinc-400 mt-0.5">
+                  Acompanhe em tempo real quem está com a <strong className="text-amber-300">Elaine.IA</strong> e quem está com o <strong className="text-amber-300">Atendimento Humano do Barbeiro</strong>.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => carregarConversas(true)}
+                  disabled={carregandoConversas}
+                  className="px-4 py-2.5 bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-800 rounded-xl text-xs font-bold flex items-center gap-2 transition shadow-sm"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${carregandoConversas ? "animate-spin" : ""}`} />
+                  {carregandoConversas ? "Atualizando..." : "Atualizar Conversas"}
+                </button>
+              </div>
+            </div>
+
+            {/* Cards de Métricas e Status Rápido */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-zinc-900/70 border border-zinc-800/80 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                <div>
+                  <span className="text-xs font-bold text-zinc-400 uppercase tracking-wider block">Total de Conversas</span>
+                  <span className="text-2xl font-black text-white mt-1 block">{conversas.length}</span>
+                  <span className="text-[11px] text-zinc-500">Histórico no WhatsApp</span>
+                </div>
+                <div className="p-3 bg-zinc-800/80 border border-zinc-700/60 rounded-xl text-zinc-300">
+                  <MessageCircle className="w-5 h-5 text-amber-400" />
+                </div>
+              </div>
+
+              <div className="bg-zinc-900/70 border border-emerald-500/30 p-4 rounded-2xl flex items-center justify-between shadow-lg shadow-emerald-500/5">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">Com a Elaine.IA</span>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold px-1.5 py-0.2 rounded-full">
+                      AUTOMÁTICO
+                    </span>
+                  </div>
+                  <span className="text-2xl font-black text-white mt-1 block">
+                    {conversas.filter(c => c.status === "IA").length}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">Respondendo clientes</span>
+                </div>
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-xl text-emerald-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className={`border p-4 rounded-2xl flex items-center justify-between transition ${
+                conversas.filter(c => c.status === "HUMANO").length > 0
+                  ? "bg-amber-950/30 border-amber-500/50 shadow-lg shadow-amber-500/10"
+                  : "bg-zinc-900/70 border-zinc-800/80"
+              }`}>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">Atendimento Humano</span>
+                    {conversas.filter(c => c.status === "HUMANO").length > 0 && (
+                      <span className="text-[9px] bg-amber-500 text-black font-extrabold px-1.5 py-0.2 rounded-full animate-pulse">
+                        PAUSADO
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-2xl font-black text-white mt-1 block">
+                    {conversas.filter(c => c.status === "HUMANO").length}
+                  </span>
+                  <span className="text-[11px] text-zinc-400">Barbeiro no comando</span>
+                </div>
+                <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-amber-400">
+                  <Headphones className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Barra de Filtro e Busca */}
+            <div className="bg-zinc-900/60 p-3.5 rounded-2xl border border-zinc-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+              {/* Botões de Filtro */}
+              <div className="flex items-center gap-1.5 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                <span className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-1.5 px-2">
+                  <Filter className="w-3.5 h-3.5" />
+                  Filtrar:
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFiltroStatusConversa("TODAS")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    filtroStatusConversa === "TODAS"
+                      ? "bg-amber-500 text-black shadow-md shadow-amber-500/20"
+                      : "bg-zinc-800/70 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  }`}
+                >
+                  Todas ({conversas.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroStatusConversa("IA")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    filtroStatusConversa === "IA"
+                      ? "bg-emerald-500 text-black shadow-md shadow-emerald-500/20"
+                      : "bg-zinc-800/70 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  }`}
+                >
+                  <Sparkles className="w-3 h-3" />
+                  Elaine.IA ({conversas.filter(c => c.status === "IA").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFiltroStatusConversa("HUMANO")}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap ${
+                    filtroStatusConversa === "HUMANO"
+                      ? "bg-amber-500 text-black shadow-md shadow-amber-500/20 font-extrabold"
+                      : "bg-zinc-800/70 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  }`}
+                >
+                  <Headphones className="w-3 h-3" />
+                  Humano ({conversas.filter(c => c.status === "HUMANO").length})
+                </button>
+              </div>
+
+              {/* Campo de Busca */}
+              <div className="relative w-full sm:w-72">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Buscar por nome ou telefone..."
+                  value={buscaConversa}
+                  onChange={(e) => setBuscaConversa(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder:text-zinc-600 focus:outline-none focus:border-amber-500 font-medium"
+                />
+                {buscaConversa && (
+                  <button
+                    type="button"
+                    onClick={() => setBuscaConversa("")}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-white text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Lista de Conversas */}
+            <div className="space-y-3">
+              {(() => {
+                const conversasFiltradas = conversas.filter(c => {
+                  const matchStatus = filtroStatusConversa === "TODAS" || c.status === filtroStatusConversa;
+                  const matchBusca = !buscaConversa || 
+                    (c.nome && c.nome.toLowerCase().includes(buscaConversa.toLowerCase())) || 
+                    (c.numero && c.numero.includes(buscaConversa)) ||
+                    (c.ultima_mensagem && c.ultima_mensagem.toLowerCase().includes(buscaConversa.toLowerCase()));
+                  return matchStatus && matchBusca;
+                });
+
+                if (conversasFiltradas.length === 0) {
+                  return (
+                    <div className="bg-zinc-900/40 border border-zinc-800/80 rounded-3xl p-12 text-center space-y-3">
+                      <div className="w-14 h-14 mx-auto rounded-2xl bg-zinc-800/70 border border-zinc-700/60 flex items-center justify-center text-zinc-400">
+                        <MessageCircle className="w-7 h-7 text-amber-400" />
+                      </div>
+                      <h3 className="text-base font-bold text-white">Nenhuma conversa encontrada</h3>
+                      <p className="text-xs text-zinc-400 max-w-md mx-auto leading-relaxed">
+                        {buscaConversa 
+                          ? `Nenhum resultado para "${buscaConversa}". Experimente limpar o filtro de busca.`
+                          : filtroStatusConversa === "HUMANO"
+                            ? "Nenhum atendimento humano pausado no momento. A Elaine.IA está cuidando de todas as conversas automaticamente!"
+                            : "As conversas do WhatsApp aparecerão aqui em tempo real assim que os clientes entrarem em contato."}
+                      </p>
+                      {buscaConversa && (
+                        <button
+                          type="button"
+                          onClick={() => setBuscaConversa("")}
+                          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-bold rounded-xl transition"
+                        >
+                          Limpar Busca
+                        </button>
+                      )}
+                    </div>
+                  );
+                }
+
+                return conversasFiltradas.map((conv) => {
+                  const ehHumano = conv.status === "HUMANO";
+                  const telefoneLimpo = conv.numero?.replace(/[^0-9]/g, "") || "";
+                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+                  const dataFormatada = conv.atualizado_em ? new Date(conv.atualizado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+                  const dataDiaFormatada = conv.atualizado_em ? new Date(conv.atualizado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
+
+                  return (
+                    <div 
+                      key={conv.remote_jid}
+                      className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                        ehHumano
+                          ? "bg-gradient-to-r from-amber-950/20 via-zinc-900/80 to-zinc-900/60 border-amber-500/40 shadow-lg shadow-amber-500/5"
+                          : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700"
+                      }`}
+                    >
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                        {/* Informações do Contato e Status */}
+                        <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                          {/* Avatar */}
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0 border ${
+                            ehHumano
+                              ? "bg-amber-500 text-black border-amber-400 font-black shadow-md shadow-amber-500/20"
+                              : "bg-zinc-800 text-zinc-200 border-zinc-700"
+                          }`}>
+                            {conv.nome ? conv.nome.charAt(0).toUpperCase() : "C"}
+                          </div>
+
+                          <div className="space-y-1 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <h4 className="font-bold text-sm text-white truncate">
+                                {conv.nome || "Cliente do WhatsApp"}
+                              </h4>
+                              
+                              <span className="text-xs font-mono text-zinc-400">
+                                {formatarTelefoneBR(conv.numero)}
+                              </span>
+
+                              {/* Badge de Status Atual */}
+                              {ehHumano ? (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider animate-pulse">
+                                  <Headphones className="w-3 h-3" />
+                                  Atendimento Humano
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                                  <Sparkles className="w-3 h-3 text-emerald-400" />
+                                  Elaine.IA Ativa
+                                </span>
+                              )}
+
+                              {dataFormatada && (
+                                <span className="text-[11px] text-zinc-500 ml-auto">
+                                  {dataDiaFormatada} às {dataFormatada}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Detalhes de Pausa se Humano */}
+                            {ehHumano && (
+                              <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                                <span className="text-[11px] text-amber-300/90 font-medium bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg flex items-center gap-1">
+                                  <Clock className="w-3 h-3 text-amber-400" />
+                                  {conv.minutos_restantes > 0 
+                                    ? `Robô pausado (~${conv.minutos_restantes} min restantes)` 
+                                    : "Robô pausado para atendimento do barbeiro"}
+                                </span>
+                                {conv.motivo_pausa && (
+                                  <span className="text-[11px] text-zinc-400 italic">
+                                    • {conv.motivo_pausa}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Snippet da Última Mensagem */}
+                            {conv.ultima_mensagem && (
+                              <div className="pt-1.5">
+                                <div className="text-xs text-zinc-300 bg-zinc-950/70 border border-zinc-800/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                                  <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                    conv.ultimo_remetente === "IA"
+                                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                                      : conv.ultimo_remetente === "HUMANO"
+                                        ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                                        : "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                                  }`}>
+                                    {conv.ultimo_remetente === "IA" ? "Elaine.IA" : conv.ultimo_remetente === "HUMANO" ? "Barbeiro" : "Cliente"}
+                                  </span>
+                                  <p className="line-clamp-2 leading-relaxed text-zinc-300">
+                                    {conv.ultima_mensagem}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Botões de Ação na Conversa */}
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 lg:flex-shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-800/80">
+                          {ehHumano ? (
+                            <button
+                              type="button"
+                              disabled={acaoConversaLoading === conv.remote_jid}
+                              onClick={() => alternarAtendimentoConversa(conv.remote_jid, "IA", conv.nome, conv.numero)}
+                              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition disabled:opacity-50 whitespace-nowrap"
+                              title="Reativa a Elaine.IA para responder este cliente automaticamente"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 text-black" />
+                              {acaoConversaLoading === conv.remote_jid ? "Devolvendo..." : "Passar para a Elaine.IA"}
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={acaoConversaLoading === conv.remote_jid}
+                              onClick={() => alternarAtendimentoConversa(conv.remote_jid, "HUMANO", conv.nome, conv.numero)}
+                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition disabled:opacity-50 whitespace-nowrap"
+                              title="Pausa o robô nesta conversa para o barbeiro falar sem ser interrompido"
+                            >
+                              <Headphones className="w-3.5 h-3.5 text-black" />
+                              {acaoConversaLoading === conv.remote_jid ? "Assumindo..." : "Assumir Atendimento"}
+                            </button>
+                          )}
+
+                          <a
+                            href={linkWhatsappWeb}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition whitespace-nowrap"
+                            title="Abrir no WhatsApp Web"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                            Abrir WhatsApp
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* ABA 7: CONFIGURAÇÕES DA BARBEARIA (REPAGINADA & ORGANIZADA) */}
         {/* ======================================================== */}
         {activeTab === "config" && (
-          <div className="space-y-6">
+          <div className="space-y-6 animate-fade-in max-w-4xl">
+            {/* Cabeçalho */}
             <div>
               <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-                <Settings className="w-6 h-6 text-amber-400" /> Configurações da Barbearia
+                <Settings className="w-6 h-6 text-amber-400" /> Configurações do Sistema & Barbearia
               </h2>
               <p className="text-sm text-zinc-400 mt-0.5">
-                Informações utilizadas pelo robô do WhatsApp e pela interface do painel
+                Gerencie todos os dados da barbearia, inteligência artificial, regras de atendimento e segurança.
               </p>
             </div>
 
-            <form onSubmit={handleSalvarConfig} className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 max-w-2xl space-y-4">
-              <div>
-                <label className="text-xs font-bold text-zinc-400 uppercase">Nome da Barbearia</label>
-                <input 
-                  type="text" 
-                  value={data?.config?.nome_barbearia || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, nome_barbearia: e.target.value } })}
-                  className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
+            {/* Barra de Sub-abas de Navegação das Categorias */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-b border-zinc-800/80">
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("todas")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "todas"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                Todas as Opções
+              </button>
 
-              <div>
-                <label className="text-xs font-bold text-zinc-400 uppercase">Link Oficial do Booksy</label>
-                <input 
-                  type="text" 
-                  value={data?.config?.link_booksy || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, link_booksy: e.target.value } })}
-                  className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("perfil")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "perfil"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                Perfil & Booksy
+              </button>
 
-              <div>
-                <label className="text-xs font-bold text-zinc-400 uppercase">Telefone Principal (WhatsApp)</label>
-                <input 
-                  type="text" 
-                  maxLength={15}
-                  value={data?.config?.telefone_principal || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, telefone_principal: formatarTelefoneBR(e.target.value) } })}
-                  className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium font-mono"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("ia")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "ia"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-amber-400 hover:text-white hover:bg-zinc-800 border border-amber-500/20"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Elaine.IA
+              </button>
 
-              <div>
-                <label className="text-xs font-bold text-zinc-400 uppercase">Endereço Completo da Barbearia</label>
-                <input 
-                  type="text" 
-                  value={data?.config?.endereco || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, endereco: e.target.value } })}
-                  placeholder="Ex: Rua Exemplo da GM, 100 - São Paulo/SP"
-                  className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("localizacao")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "localizacao"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Endereço & GPS
+              </button>
 
-              {/* Seção Google Maps & Localização GPS Nativa no WhatsApp */}
-              <div className="p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-amber-400" />
-                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                      Link da Localização no Google Maps & GPS
-                    </label>
-                  </div>
-                  <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
-                    WhatsApp GPS Card Ativo
-                  </span>
-                </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("horarios")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "horarios"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <Clock className="w-3.5 h-3.5" />
+                Horários & Pix
+              </button>
 
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input 
-                      type="text" 
-                      value={data?.config?.link_google_maps || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        let lat = data?.config?.latitude;
-                        let lng = data?.config?.longitude;
-                        // Auto-extrair coordenadas se colado um link do Maps
-                        const mArroba = val.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-                        const mQuery = val.match(/[?&](?:q|ll|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
-                        const mData = val.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
-                        const mDireto = val.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
-                        if (mArroba) { lat = mArroba[1]; lng = mArroba[2]; }
-                        else if (mQuery) { lat = mQuery[1]; lng = mQuery[2]; }
-                        else if (mData) { lat = mData[1]; lng = mData[2]; }
-                        else if (mDireto) { lat = mDireto[1]; lng = mDireto[2]; }
-                        setData({ ...data, config: { ...data.config, link_google_maps: val, latitude: lat, longitude: lng } });
-                      }}
-                      placeholder="https://maps.google.com/?q=..."
-                      className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
-                    />
-                    {data?.config?.link_google_maps && (
-                      <button
-                        type="button"
-                        onClick={() => window.open(data?.config?.link_google_maps, '_blank')}
-                        className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-                        title="Abrir no Google Maps"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                        Abrir
-                      </button>
-                    )}
-                  </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("automacoes")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "automacoes"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <Bell className="w-3.5 h-3.5" />
+                Pausa & Automações
+              </button>
 
-                  <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!data?.config?.endereco) {
-                          mostrarFeedback("Preencha o endereço completo primeiro para gerar o link.", "error");
-                          return;
-                        }
-                        const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(data.config.endereco)}`;
-                        setData({ ...data, config: { ...data.config, link_google_maps: url } });
-                        mostrarFeedback("Link gerado a partir do endereço!");
-                      }}
-                      className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 flex items-center gap-1.5 transition"
-                    >
-                      <Navigation className="w-3 h-3 text-amber-400" />
-                      Gerar Link a partir do Endereço
-                    </button>
-                  </div>
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("seguranca")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "seguranca"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                Segurança
+              </button>
 
-                  {/* Coordenadas GPS Exatas para o Card Nativo do WhatsApp */}
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase">Latitude GPS (ex: -23.550520)</label>
-                      <input 
-                        type="text" 
-                        value={data?.config?.latitude ?? ""}
-                        onChange={(e) => setData({ ...data, config: { ...data.config, latitude: e.target.value } })}
-                        placeholder="-23.550520"
-                        className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
-                      />
+              <button
+                type="button"
+                onClick={() => setSubTabConfig("atualizacoes")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 whitespace-nowrap ${
+                  subTabConfig === "atualizacoes"
+                    ? "bg-amber-500 text-black shadow-lg shadow-amber-500/20 font-black"
+                    : "bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800"
+                }`}
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Atualizações
+                {statusAtualizacao?.temAtualizacao && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                )}
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarConfig} className="space-y-6">
+              
+              {/* CARD 1: PERFIL OFICIAL & BOOKSY */}
+              {(subTabConfig === "todas" || subTabConfig === "perfil") && (
+                <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 pb-2 border-b border-zinc-800/80">
+                    <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                      <UserCheck className="w-5 h-5" />
                     </div>
                     <div>
-                      <label className="text-[10px] font-bold text-zinc-400 uppercase">Longitude GPS (ex: -46.633308)</label>
+                      <h3 className="font-extrabold text-base text-white">Perfil Oficial da Barbearia</h3>
+                      <p className="text-xs text-zinc-400">Informações públicas exibidas no painel e utilizadas pelo robô</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Nome da Barbearia</label>
                       <input 
                         type="text" 
-                        value={data?.config?.longitude ?? ""}
-                        onChange={(e) => setData({ ...data, config: { ...data.config, longitude: e.target.value } })}
-                        placeholder="-46.633308"
-                        className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        value={data?.config?.nome_barbearia || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, nome_barbearia: e.target.value } })}
+                        placeholder="Ex: GM Barbershop"
+                        className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
                       />
                     </div>
-                  </div>
 
-                  <p className="text-[11px] text-zinc-400 pt-1 leading-relaxed">
-                    💡 <strong className="text-zinc-300">Como funciona:</strong> Quando o cliente solicitar o endereço no WhatsApp (palavras como <em>"onde fica"</em>, <em>"endereço"</em>, <em>"localização"</em>), o robô enviará automaticamente o <strong>Card Interativo com Mapa GPS oficial do WhatsApp</strong> junto com o link e rota do Waze/Google Maps.
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-zinc-400 uppercase">Chave Pix</label>
-                <input 
-                  type="text" 
-                  value={data?.config?.chave_pix || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, chave_pix: e.target.value } })}
-                  className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
-                />
-              </div>
-
-              {/* Seção Horários de Funcionamento Editáveis */}
-              <div className="p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-4 h-4 text-amber-400" />
-                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                      Horários de Atendimento & Funcionamento
-                    </label>
-                  </div>
-                  <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
-                    Variável {"{horario}"} (Opção 8)
-                  </span>
-                </div>
-
-                <p className="text-xs text-zinc-400">
-                  Defina os dias e horários em que a barbearia atende. Você pode pular linhas para organizar dia por dia:
-                </p>
-
-                <textarea 
-                  rows={4}
-                  value={data?.config?.horario_funcionamento || ""}
-                  onChange={(e) => setData({ ...data, config: { ...data.config, horario_funcionamento: e.target.value } })}
-                  placeholder="Ex:&#10;• Terça a Sexta: 09h às 20h&#10;• Sábado: 08h30 às 19h&#10;• Domingo e Segunda: Fechado"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium leading-relaxed resize-none"
-                />
-
-                {/* Modelos rápidos de horário */}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
-                  <span className="text-[10px] text-zinc-500 font-bold uppercase">Modelos Rápidos:</span>
-                  <button
-                    type="button"
-                    onClick={() => setData({
-                      ...data,
-                      config: {
-                        ...data.config,
-                        horario_funcionamento: "• Terça a Sexta: 09h às 20h\n• Sábado: 08h30 às 19h\n• Domingo e Segunda: Fechado"
-                      }
-                    })}
-                    className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
-                  >
-                    Terça a Sábado (Padrão GM)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setData({
-                      ...data,
-                      config: {
-                        ...data.config,
-                        horario_funcionamento: "• Segunda a Sexta: 09h às 20h\n• Sábado: 09h às 18h\n• Domingo: Fechado"
-                      }
-                    })}
-                    className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
-                  >
-                    Segunda a Sábado
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setData({
-                      ...data,
-                      config: {
-                        ...data.config,
-                        horario_funcionamento: "• Segunda a Domingo: 09h às 21h (Todos os dias)"
-                      }
-                    })}
-                    className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
-                  >
-                    Todos os Dias
-                  </button>
-                </div>
-
-                <p className="text-[11px] text-zinc-500 pt-1">
-                  💡 Este texto substitui automaticamente a tag <span className="text-amber-400 font-mono">{"{horario}"}</span> quando o cliente pergunta horários no WhatsApp ou na resposta direta de horários. Você também pode personalizar o texto inteiro na aba <strong>WhatsApp</strong>!
-                </p>
-              </div>
-
-              {/* Seção Automação de Lembrete de Renovação do Clube VIP */}
-              <div className="p-5 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Bell className="w-4 h-4 text-amber-400" />
-                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                      Aviso Automático de Renovação do Clube VIP no WhatsApp
-                    </label>
-                  </div>
-                  <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
-                    data?.config?.aviso_renovacao_ativo !== 0
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                      : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                  }`}>
-                    {data?.config?.aviso_renovacao_ativo !== 0 ? "Automação Ativa" : "Desativado"}
-                  </span>
-                </div>
-
-                <div className="grid sm:grid-cols-2 gap-4 pt-1">
-                  <div>
-                    <label className="text-xs font-bold text-zinc-400 uppercase">
-                      Avisar com Quantos Dias de Antecedência?
-                    </label>
-                    <div className="flex items-center gap-2 mt-1">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Telefone Principal (WhatsApp)</label>
                       <input 
-                        type="number" 
-                        min="1"
-                        max="30"
-                        value={data?.config?.dias_aviso_renovacao ?? 3}
-                        onChange={(e) => setData({ 
-                          ...data, 
-                          config: { ...data.config, dias_aviso_renovacao: Math.max(1, Number(e.target.value)) } 
-                        })}
-                        className="w-24 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white font-bold text-center focus:outline-none focus:border-amber-500 font-mono"
+                        type="text" 
+                        maxLength={15}
+                        value={data?.config?.telefone_principal || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, telefone_principal: formatarTelefoneBR(e.target.value) } })}
+                        placeholder="(11) 96012-9564"
+                        className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium font-mono"
                       />
-                      <span className="text-xs text-zinc-400 font-medium">dias antes do vencimento</span>
+                    </div>
+
+                    <div className="md:col-span-2">
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Link Oficial do Booksy (Agendamento)</label>
+                      <div className="flex gap-2 mt-1">
+                        <input 
+                          type="text" 
+                          value={data?.config?.link_booksy || ""}
+                          onChange={(e) => setData({ ...data, config: { ...data.config, link_booksy: e.target.value } })}
+                          placeholder="https://booksy.com/pt-br/..."
+                          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
+                        />
+                        {data?.config?.link_booksy && (
+                          <a
+                            href={data.config.link_booksy}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Abrir Booksy
+                          </a>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-zinc-500 mt-1 block">
+                        Este link é enviado automaticamente quando os clientes solicitam agendamento ou perguntam como marcar horário.
+                      </span>
                     </div>
                   </div>
+                </div>
+              )}
 
-                  <div>
-                    <label className="text-xs font-bold text-zinc-400 uppercase">Status do Disparo</label>
-                    <div className="mt-1 flex items-center gap-2">
+              {/* CARD 2: INTELIGÊNCIA ARTIFICIAL (ELAINE.IA) */}
+              {(subTabConfig === "todas" || subTabConfig === "ia") && (
+                <div className="p-6 bg-gradient-to-br from-zinc-950 via-zinc-900/90 to-zinc-950 border border-amber-500/40 rounded-3xl space-y-4 shadow-xl shadow-amber-500/5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800/80">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                        <Sparkles className="w-5 h-5 text-amber-400" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-base text-white flex items-center gap-2">
+                          Inteligência Artificial (Elaine.IA)
+                          <span className="text-[10px] bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-0.5 rounded-full font-mono font-bold uppercase">
+                            Assistente Virtual Delicada & Formal
+                          </span>
+                        </h4>
+                        <p className="text-xs text-zinc-400">
+                          Atendimento educado, formal e acolhedor com a assistente Elaine.IA no WhatsApp
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${
+                        data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : !data?.config?.gemini_api_key?.trim()
+                            ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                            : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                      }`}>
+                        {data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
+                          ? "● Elaine.IA Pronta & Ativa"
+                          : !data?.config?.gemini_api_key?.trim()
+                            ? "○ Aguardando API Key"
+                            : "✕ IA Desativada"}
+                      </span>
                       <button
                         type="button"
                         onClick={() => setData({
                           ...data,
-                          config: { ...data.config, aviso_renovacao_ativo: data?.config?.aviso_renovacao_ativo === 0 ? 1 : 0 }
+                          config: { ...data.config, gemini_ativo: data?.config?.gemini_ativo === 0 ? 1 : 0 }
                         })}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition border ${
-                          data?.config?.aviso_renovacao_ativo !== 0
-                            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
-                            : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 text-zinc-300"
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
+                          data?.config?.gemini_ativo !== 0
+                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30"
+                            : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
                         }`}
                       >
-                        {data?.config?.aviso_renovacao_ativo !== 0 ? "✓ Envio Automático Ligado" : "✕ Envio Automático Desligado"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await fetch("/api/whatsapp/lembretes", { method: "POST" });
-                            const json = await res.json();
-                            if (json.success) {
-                              mostrarFeedback(`Checagem realizada! ${json.enviados} lembrete(s) enviado(s) no WhatsApp.`);
-                            } else {
-                              mostrarFeedback("Erro ao verificar lembretes", "error");
-                            }
-                          } catch (e) {
-                            mostrarFeedback("Falha na requisição", "error");
-                          }
-                        }}
-                        className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-zinc-700 transition"
-                        title="Verifica clientes próximos do vencimento e dispara agora"
-                      >
-                        <Send className="w-3.5 h-3.5 text-amber-400" />
-                        Disparar Agora
+                        {data?.config?.gemini_ativo !== 0 ? "Ligado" : "Desligado"}
                       </button>
                     </div>
                   </div>
-                </div>
 
-                <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1">
-                  <p>
-                    💡 <strong className="text-zinc-200">Como funciona:</strong> Todo dia, o robô do WhatsApp analisa os mensalistas cadastrados. Quando faltar <strong>{data?.config?.dias_aviso_renovacao ?? 3} dias</strong> (ou menos) para o ciclo do cliente vencer, o robô envia automaticamente a mensagem oficial de renovação com a chave Pix.
-                  </p>
-                  <p className="text-[11px] text-zinc-500">
-                    O texto enviado é o modelo configurado em <em>"Robô do WhatsApp &gt; 📅 Lembrete de Renovação do Clube VIP"</em>.
-                  </p>
-                </div>
-              </div>
+                  {/* Chave de API */}
+                  <div className="space-y-2 pt-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1.5">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+                        Chave de Integração da Inteligência Artificial
+                      </label>
+                    </div>
 
-              {/* Seção de Intervenção Humana & Pausa Inteligente do Robô */}
-              <div className="bg-zinc-950/70 p-5 rounded-2xl border border-zinc-800/80 space-y-4">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-emerald-400" />
-                  <div>
-                    <h4 className="font-bold text-sm text-white">Intervenção Humana & Pausa Inteligente do Robô</h4>
-                    <p className="text-xs text-zinc-400">
-                      Evita que o robô responda por cima quando você estiver conversando com o cliente no WhatsApp.
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          type={mostrarKeyGemini ? "text" : "password"}
+                          value={data?.config?.gemini_api_key || ""}
+                          onChange={(e) => setData({ ...data, config: { ...data.config, gemini_api_key: e.target.value } })}
+                          placeholder="Cole aqui a chave de ativação da IA..."
+                          className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pr-10 text-sm text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setMostrarKeyGemini(!mostrarKeyGemini)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
+                          title={mostrarKeyGemini ? "Ocultar Chave" : "Exibir Chave"}
+                        >
+                          {mostrarKeyGemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={testandoGemini || !data?.config?.gemini_api_key?.trim()}
+                        onClick={testarChaveGemini}
+                        className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-zinc-700 transition shadow-sm whitespace-nowrap"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${testandoGemini ? "animate-spin" : ""}`} />
+                        {testandoGemini ? "Testando Conexão..." : "Testar Chave"}
+                      </button>
+                    </div>
+
+                    {resultadoGemini && (
+                      <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
+                        resultadoGemini.success
+                          ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+                          : "bg-red-950/40 border-red-500/30 text-red-300"
+                      }`}>
+                        {resultadoGemini.success ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                        <span>{resultadoGemini.msg}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Prompt Personalizado */}
+                  <div className="space-y-2 pt-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
+                          Instruções de Personalidade (Prompt da Elaine.IA)
+                        </label>
+                        <p className="text-[11px] text-zinc-400 mt-0.5">
+                          Defina como a Elaine.IA se apresenta e conversa com seus clientes. Preços, serviços e Booksy são atualizados automaticamente em tempo real.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: PROMPT_PADRAO_GEMINI } });
+                          mostrarFeedback("Prompt oficial da Elaine.IA restaurado!");
+                        }}
+                        className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition flex-shrink-0"
+                      >
+                        <RotateCcw className="w-3 h-3 text-amber-400" />
+                        Restaurar Padrão
+                      </button>
+                    </div>
+
+                    <textarea
+                      rows={6}
+                      value={data?.config?.gemini_prompt_personalizado || ""}
+                      onChange={(e) => setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: e.target.value } })}
+                      placeholder={PROMPT_PADRAO_GEMINI}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 font-mono leading-relaxed resize-y"
+                    />
+                  </div>
+
+                  {/* Informações de Operação */}
+                  <div className="p-3.5 bg-zinc-950/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-amber-300">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Como a Elaine.IA opera no WhatsApp:</span>
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
+                      <li><strong className="text-zinc-200">Alta Performance & Baixa Latência:</strong> Otimizada com resposta em menos de 3 segundos no WhatsApp.</li>
+                      <li><strong className="text-zinc-200">Apresentação Única:</strong> Apresenta-se apenas no início da conversa ou na primeira mensagem, evitando repetições cansativas.</li>
+                      <li><strong className="text-zinc-200">Fallback Automático:</strong> Se a IA demorar mais de 4,5s, o robô responde instantaneamente pelas palavras-chave tradicionais (Booksy, tabela de preços, endereço, Pix).</li>
+                      <li><strong className="text-zinc-200">Memória de Conversa:</strong> Lembra das últimas 6 mensagens trocadas com cada cliente para manter o contexto fluído.</li>
+                      <li><strong className="text-zinc-200">Prioridade aos Comandos:</strong> Os comandos <code>#menu</code>, <code>#sair</code>, <code>#iniciar</code> e <code>#ativar</code> têm prioridade máxima.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* CARD 3: ENDEREÇO & LOCALIZAÇÃO GPS */}
+              {(subTabConfig === "todas" || subTabConfig === "localizacao") && (
+                <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between pb-2 border-b border-zinc-800/80">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                        <MapPin className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-base text-white">Endereço & Localização GPS no WhatsApp</h3>
+                        <p className="text-xs text-zinc-400">Card nativo interativo com mapa e rotas enviado automaticamente</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-full font-bold">
+                      WhatsApp GPS Card Ativo
+                    </span>
+                  </div>
+
+                  <div className="space-y-4 pt-1">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Endereço Completo da Barbearia</label>
+                      <input 
+                        type="text" 
+                        value={data?.config?.endereco || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, endereco: e.target.value } })}
+                        placeholder="Ex: Rua Exemplo da GM, 100 - São Paulo/SP"
+                        className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Link do Google Maps</label>
+                      <div className="flex gap-2 mt-1">
+                        <input 
+                          type="text" 
+                          value={data?.config?.link_google_maps || ""}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            let lat = data?.config?.latitude;
+                            let lng = data?.config?.longitude;
+                            const mArroba = val.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+                            const mQuery = val.match(/[?&](?:q|ll|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+                            const mData = val.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+                            const mDireto = val.trim().match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+                            if (mArroba) { lat = mArroba[1]; lng = mArroba[2]; }
+                            else if (mQuery) { lat = mQuery[1]; lng = mQuery[2]; }
+                            else if (mData) { lat = mData[1]; lng = mData[2]; }
+                            else if (mDireto) { lat = mDireto[1]; lng = mDireto[2]; }
+                            setData({ ...data, config: { ...data.config, link_google_maps: val, latitude: lat, longitude: lng } });
+                          }}
+                          placeholder="https://maps.google.com/?q=..."
+                          className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium"
+                        />
+                        {data?.config?.link_google_maps && (
+                          <a
+                            href={data.config.link_google_maps}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition whitespace-nowrap"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            Abrir Maps
+                          </a>
+                        )}
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!data?.config?.endereco) {
+                              mostrarFeedback("Preencha o endereço completo primeiro para gerar o link.", "error");
+                              return;
+                            }
+                            const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(data.config.endereco)}`;
+                            setData({ ...data, config: { ...data.config, link_google_maps: url } });
+                            mostrarFeedback("Link gerado a partir do endereço!");
+                          }}
+                          className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition"
+                        >
+                          <Navigation className="w-3.5 h-3.5 text-amber-400" />
+                          Gerar Link a partir do Endereço
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Coordenadas GPS */}
+                    <div className="grid grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase">Latitude GPS (ex: -23.550520)</label>
+                        <input 
+                          type="text" 
+                          value={data?.config?.latitude ?? ""}
+                          onChange={(e) => setData({ ...data, config: { ...data.config, latitude: e.target.value } })}
+                          placeholder="-23.550520"
+                          className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase">Longitude GPS (ex: -46.633308)</label>
+                        <input 
+                          type="text" 
+                          value={data?.config?.longitude ?? ""}
+                          onChange={(e) => setData({ ...data, config: { ...data.config, longitude: e.target.value } })}
+                          placeholder="-46.633308"
+                          className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500 font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-[11px] text-zinc-400 pt-1 leading-relaxed">
+                      💡 Quando o cliente perguntar <em>"onde fica"</em> ou <em>"endereço"</em>, o robô enviará automaticamente o <strong>Card Oficial do Mapa do WhatsApp</strong> com botão de rota no Waze e Google Maps.
                     </p>
                   </div>
                 </div>
+              )}
 
-                <div className="max-w-xs">
-                  <label className="text-xs font-bold text-zinc-400 uppercase">Tempo de Pausa do Robô (Minutos)</label>
-                  <input 
-                    type="number" 
-                    min="5" 
-                    max="1440"
-                    placeholder="120"
-                    value={data?.config?.tempo_pausa_humano_minutos ?? 120}
-                    onChange={(e) => setData({
-                      ...data,
-                      config: { ...data.config, tempo_pausa_humano_minutos: Number(e.target.value) }
-                    })}
-                    className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white focus:border-amber-500 outline-none"
-                  />
-                </div>
-
-                <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1">
-                  <p>
-                    💡 <strong className="text-zinc-200">Como funciona a pausa automática:</strong>
-                  </p>
-                  <ul className="list-disc list-inside space-y-1.5 text-[11px] text-zinc-400">
-                    <li><strong>Comando "iniciar atendimento":</strong> Ao digitar <code>iniciar atendimento</code> no celular, o robô avisa o cliente que um profissional assumiu e pausa o robô na hora.</li>
-                    <li><strong>Comando "finalizar atendimento":</strong> Ao terminar, digite <code>finalizar atendimento</code> para o robô agradecer o cliente e voltar a responder automaticamente.</li>
-                    <li><strong>Pausa automática inteligente:</strong> Qualquer mensagem normal que o atendente digitar no celular já pausa o robô para evitar que ele fale por cima.</li>
-                    <li><strong>Dúvidas diretas do cliente:</strong> Se o cliente mandar uma dúvida fora do menu, o robô avisa que a equipe vai responder e entra em pausa de espera.</li>
-                    <li><strong>Reativação pelo painel:</strong> Você também pode clicar no botão <strong>Reativar</strong> na aba <em>Robô do WhatsApp</em> a qualquer momento.</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Seção Inteligência Artificial Google Gemini */}
-              <div className="p-5 bg-gradient-to-br from-zinc-950 via-zinc-900/90 to-zinc-950 border border-amber-500/30 rounded-2xl space-y-4 shadow-xl shadow-amber-500/5">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
+              {/* CARD 4: HORÁRIOS & PIX */}
+              {(subTabConfig === "todas" || subTabConfig === "horarios") && (
+                <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 pb-2 border-b border-zinc-800/80">
                     <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
-                      <Sparkles className="w-5 h-5 text-amber-400" />
+                      <Clock className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="font-extrabold text-sm text-white flex items-center gap-2">
-                        Inteligência Artificial (Elaine.IA)
-                        <span className="text-[10px] bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono font-bold uppercase">
-                          Assistente Virtual Delicada & Formal
-                        </span>
-                      </h4>
-                      <p className="text-xs text-zinc-400">
-                        Atendimento educado, formal e acolhedor com a assistente Elaine.IA no WhatsApp
-                      </p>
+                      <h3 className="font-extrabold text-base text-white">Horários de Atendimento & Chave Pix</h3>
+                      <p className="text-xs text-zinc-400">Informações financeiras e de expediente informadas aos clientes</p>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
-                    <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold border ${
-                      data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
-                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-                        : !data?.config?.gemini_api_key?.trim()
-                          ? "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                          : "bg-zinc-800 text-zinc-400 border-zinc-700"
-                    }`}>
-                      {data?.config?.gemini_ativo !== 0 && data?.config?.gemini_api_key?.trim()
-                        ? "● IA Pronta & Ativa"
-                        : !data?.config?.gemini_api_key?.trim()
-                          ? "○ Aguardando API Key"
-                          : "✕ IA Desativada"}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setData({
-                        ...data,
-                        config: { ...data.config, gemini_ativo: data?.config?.gemini_ativo === 0 ? 1 : 0 }
-                      })}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition border ${
-                        data?.config?.gemini_ativo !== 0
-                          ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30"
-                          : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200"
-                      }`}
-                    >
-                      {data?.config?.gemini_ativo !== 0 ? "Ligado" : "Desligado"}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Chave de API */}
-                <div className="space-y-2 pt-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide flex items-center gap-1.5">
-                      <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-                      Chave de Integração da Inteligência Artificial
-                    </label>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <div className="relative flex-1">
-                      <input
-                        type={mostrarKeyGemini ? "text" : "password"}
-                        value={data?.config?.gemini_api_key || ""}
-                        onChange={(e) => setData({ ...data, config: { ...data.config, gemini_api_key: e.target.value } })}
-                        placeholder="Cole aqui a chave de ativação da IA..."
-                        className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 pr-10 text-sm text-white font-mono placeholder:text-zinc-600 focus:outline-none focus:border-amber-500"
+                  <div className="space-y-4 pt-1">
+                    <div>
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Chave Pix Oficial da Barbearia</label>
+                      <input 
+                        type="text" 
+                        value={data?.config?.chave_pix || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, chave_pix: e.target.value } })}
+                        placeholder="Telefone, CNPJ, E-mail ou Chave Aleatória"
+                        className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium font-mono"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setMostrarKeyGemini(!mostrarKeyGemini)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-200 p-1"
-                        title={mostrarKeyGemini ? "Ocultar Chave" : "Exibir Chave"}
-                      >
-                        {mostrarKeyGemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                      <span className="text-[11px] text-zinc-500 mt-1 block">
+                        Utilizada na resposta automática de pagamentos e nos lembretes de renovação do Clube VIP.
+                      </span>
                     </div>
 
-                    <button
-                      type="button"
-                      disabled={testandoGemini || !data?.config?.gemini_api_key?.trim()}
-                      onClick={testarChaveGemini}
-                      className="px-4 py-2.5 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-zinc-700 transition shadow-sm whitespace-nowrap"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${testandoGemini ? "animate-spin" : ""}`} />
-                      {testandoGemini ? "Testando Conexão..." : "Testar Chave"}
-                    </button>
-                  </div>
-
-                  {resultadoGemini && (
-                    <div className={`p-3 rounded-xl border text-xs flex items-center gap-2 ${
-                      resultadoGemini.success
-                        ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
-                        : "bg-red-950/40 border-red-500/30 text-red-300"
-                    }`}>
-                      {resultadoGemini.success ? <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
-                      <span>{resultadoGemini.msg}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Prompt Personalizado */}
-                <div className="space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
                     <div>
-                      <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                        Instruções de Personalidade (Prompt da Elaine.IA)
-                      </label>
-                      <p className="text-[11px] text-zinc-400 mt-0.5">
-                        Defina como a Elaine.IA se apresenta e conversa com seus clientes. Preços, serviços e Booksy são atualizados automaticamente.
-                      </p>
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-zinc-400 uppercase">
+                          Horários de Funcionamento da Barbearia
+                        </label>
+                        <span className="text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-0.5 rounded-full font-bold">
+                          Variável {"{horario}"}
+                        </span>
+                      </div>
+
+                      <textarea 
+                        rows={4}
+                        value={data?.config?.horario_funcionamento || ""}
+                        onChange={(e) => setData({ ...data, config: { ...data.config, horario_funcionamento: e.target.value } })}
+                        placeholder="Ex:&#10;• Terça a Sexta: 09h às 20h&#10;• Sábado: 08h30 às 19h&#10;• Domingo e Segunda: Fechado"
+                        className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium leading-relaxed resize-none"
+                      />
+
+                      {/* Modelos rápidos */}
+                      <div className="flex flex-wrap items-center gap-2 pt-2">
+                        <span className="text-[10px] text-zinc-500 font-bold uppercase">Modelos Rápidos:</span>
+                        <button
+                          type="button"
+                          onClick={() => setData({
+                            ...data,
+                            config: {
+                              ...data.config,
+                              horario_funcionamento: "• Terça a Sexta: 09h às 20h\n• Sábado: 08h30 às 19h\n• Domingo e Segunda: Fechado"
+                            }
+                          })}
+                          className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
+                        >
+                          Terça a Sábado (Padrão GM)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setData({
+                            ...data,
+                            config: {
+                              ...data.config,
+                              horario_funcionamento: "• Segunda a Sexta: 09h às 20h\n• Sábado: 09h às 18h\n• Domingo: Fechado"
+                            }
+                          })}
+                          className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
+                        >
+                          Segunda a Sábado
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setData({
+                            ...data,
+                            config: {
+                              ...data.config,
+                              horario_funcionamento: "• Segunda a Domingo: 09h às 21h (Todos os dias)"
+                            }
+                          })}
+                          className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
+                        >
+                          Todos os Dias
+                        </button>
+                      </div>
                     </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CARD 5: PAUSA HUMANA & AUTOMAÇÕES */}
+              {(subTabConfig === "todas" || subTabConfig === "automacoes") && (
+                <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-6 shadow-sm">
+                  <div className="flex items-center gap-3 pb-2 border-b border-zinc-800/80">
+                    <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                      <Bell className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-base text-white">Intervenção Humana & Automações do Robô</h3>
+                      <p className="text-xs text-zinc-400">Regras para o robô não falar por cima do atendente e aviso de renovação do Clube VIP</p>
+                    </div>
+                  </div>
+
+                  {/* Intervenção Humana */}
+                  <div className="p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-3">
+                    <div className="flex items-center gap-2">
+                      <UserCheck className="w-4 h-4 text-emerald-400" />
+                      <h4 className="font-bold text-sm text-white">Pausa Automática Inteligente (Intervenção Humana)</h4>
+                    </div>
+                    <p className="text-xs text-zinc-400">
+                      Quando você digita no WhatsApp pelo celular, o robô pausa automaticamente para você atender o cliente sem interrupções.
+                    </p>
+
+                    <div className="max-w-xs pt-1">
+                      <label className="text-xs font-bold text-zinc-400 uppercase">Tempo de Pausa do Robô (Minutos)</label>
+                      <input 
+                        type="number" 
+                        min="5" 
+                        max="1440"
+                        placeholder="120"
+                        value={data?.config?.tempo_pausa_humano_minutos ?? 120}
+                        onChange={(e) => setData({
+                          ...data,
+                          config: { ...data.config, tempo_pausa_humano_minutos: Number(e.target.value) }
+                        })}
+                        className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded-xl px-3.5 py-2 text-sm text-white focus:border-amber-500 outline-none font-mono"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1">
+                      <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
+                        <li><strong>Reativação Automática:</strong> Se o cliente mandar qualquer saudação (como <em>"oi"</em>, <em>"olá"</em>, <em>"boa tarde"</em>) após a conversa, a Elaine.IA reativa na hora.</li>
+                        <li><strong>Controle pelo Painel:</strong> Você pode assumir ou devolver conversas para a Elaine.IA com 1 clique na aba <strong>Conversas & IA</strong>.</li>
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Lembrete de Renovação Clube VIP */}
+                  <div className="p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Bell className="w-4 h-4 text-amber-400" />
+                        <h4 className="font-bold text-sm text-white">Aviso Automático de Renovação do Clube VIP</h4>
+                      </div>
+                      <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold border ${
+                        data?.config?.aviso_renovacao_ativo !== 0
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
+                          : "bg-zinc-800 text-zinc-400 border-zinc-700"
+                      }`}>
+                        {data?.config?.aviso_renovacao_ativo !== 0 ? "Automação Ativa" : "Desativado"}
+                      </span>
+                    </div>
+
+                    <div className="grid sm:grid-cols-2 gap-4 pt-1">
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase">
+                          Avisar com Quantos Dias de Antecedência?
+                        </label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <input 
+                            type="number" 
+                            min="1" 
+                            max="30"
+                            value={data?.config?.dias_aviso_renovacao ?? 3}
+                            onChange={(e) => setData({ 
+                              ...data, 
+                              config: { ...data.config, dias_aviso_renovacao: Math.max(1, Number(e.target.value)) } 
+                            })}
+                            className="w-24 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-white font-bold text-center focus:outline-none focus:border-amber-500 font-mono"
+                          />
+                          <span className="text-xs text-zinc-400 font-medium">dias antes do vencimento</span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-zinc-400 uppercase">Status do Disparo</label>
+                        <div className="mt-1 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setData({
+                              ...data,
+                              config: { ...data.config, aviso_renovacao_ativo: data?.config?.aviso_renovacao_ativo === 0 ? 1 : 0 }
+                            })}
+                            className={`px-4 py-2 rounded-xl text-xs font-bold transition border ${
+                              data?.config?.aviso_renovacao_ativo !== 0
+                                ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/30"
+                                : "bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 text-zinc-300"
+                            }`}
+                          >
+                            {data?.config?.aviso_renovacao_ativo !== 0 ? "✓ Envio Automático Ligado" : "✕ Envio Automático Desligado"}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const res = await fetch("/api/whatsapp/lembretes", { method: "POST" });
+                                const json = await res.json();
+                                if (json.success) {
+                                  mostrarFeedback(`Checagem realizada! ${json.enviados} lembrete(s) enviado(s) no WhatsApp.`);
+                                } else {
+                                  mostrarFeedback("Erro ao verificar lembretes", "error");
+                                }
+                              } catch (e) {
+                                mostrarFeedback("Falha na requisição", "error");
+                              }
+                            }}
+                            className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold flex items-center gap-1.5 border border-zinc-700 transition"
+                            title="Verifica clientes próximos do vencimento e dispara agora"
+                          >
+                            <Send className="w-3.5 h-3.5 text-amber-400" />
+                            Disparar Agora
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CARD 6: SEGURANÇA & SENHA */}
+              {(subTabConfig === "todas" || subTabConfig === "seguranca") && (
+                <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-4 shadow-sm">
+                  <div className="flex items-center gap-3 pb-2 border-b border-zinc-800/80">
+                    <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                      <Lock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-base text-white">Segurança do Painel & Senha de Acesso</h3>
+                      <p className="text-xs text-zinc-400">Proteja as configurações contra acessos indevidos no Wi-Fi</p>
+                    </div>
+                  </div>
+
+                  <div className="max-w-md space-y-2 pt-1">
+                    <label className="text-xs font-bold text-zinc-400 uppercase">Definir Nova Senha de Administrador</label>
+                    <input 
+                      type="password" 
+                      placeholder="Deixe em branco para manter a senha atual"
+                      value={novaSenhaAdmin}
+                      onChange={(e) => setNovaSenhaAdmin(e.target.value)}
+                      className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium font-mono"
+                    />
+                    <span className="text-[11px] text-zinc-500 block">
+                      Mínimo de 4 dígitos. Senha padrão inicial de fábrica: <strong className="text-zinc-400 font-mono">admin123</strong>
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* BARRA FLUTUANTE FIXA DE SALVAR */}
+              {subTabConfig !== "atualizacoes" && (
+                <div className="sticky bottom-4 z-20 bg-zinc-900/95 backdrop-blur-md border border-amber-500/30 p-3.5 sm:p-4 rounded-2xl shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">Salvar Configurações</span>
+                      <span className="text-[11px] text-zinc-400">Alterações são gravadas diretamente no banco de dados SQLite local</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <button
                       type="button"
-                      onClick={() => {
-                        setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: PROMPT_PADRAO_GEMINI } });
-                        mostrarFeedback("Prompt padrão restaurado!");
-                      }}
-                      className="px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700 flex items-center gap-1.5 transition flex-shrink-0"
+                      onClick={() => carregarDados()}
+                      className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-xl text-xs font-bold transition flex-1 sm:flex-none text-center"
                     >
-                      <RotateCcw className="w-3 h-3 text-amber-400" />
-                      Restaurar Padrão
+                      Descartar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs rounded-xl shadow-lg shadow-amber-500/20 transition flex items-center justify-center gap-1.5 flex-1 sm:flex-none"
+                    >
+                      <Check className="w-4 h-4" />
+                      Salvar Alterações
                     </button>
                   </div>
-
-                  <textarea
-                    rows={6}
-                    value={data?.config?.gemini_prompt_personalizado || ""}
-                    onChange={(e) => setData({ ...data, config: { ...data.config, gemini_prompt_personalizado: e.target.value } })}
-                    placeholder={PROMPT_PADRAO_GEMINI}
-                    className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 font-mono leading-relaxed resize-y"
-                  />
                 </div>
-
-                {/* Informações e Garantias */}
-                <div className="p-3.5 bg-zinc-950/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1.5">
-                  <div className="flex items-center gap-1.5 font-bold text-amber-300">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Como a Inteligência Artificial opera no WhatsApp:</span>
-                  </div>
-                  <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
-                    <li><strong className="text-zinc-200">Alta Performance & Capacidade:</strong> Processamento em nuvem de alta velocidade preparado para atender grandes volumes de mensagens mensais em tempo real.</li>
-                    <li><strong className="text-zinc-200">Fallback Automático:</strong> Se a chave não for configurada ou a conexão com o Google demorar mais de 4,5s, o robô responde instantaneamente pelas palavras-chave tradicionais (Booksy, tabela de preços, endereço, Pix).</li>
-                    <li><strong className="text-zinc-200">Memória de Conversa:</strong> Lembra das últimas 6 mensagens trocadas com cada cliente para manter a conversa fluida e natural.</li>
-                    <li><strong className="text-zinc-200">Prioridade Total aos Comandos:</strong> Os comandos <code>#menu</code>, <code>#sair</code>, <code>#iniciar</code> e <code>#ativar</code> têm prioridade máxima e funcionam de imediato.</li>
-                  </ul>
-                </div>
-              </div>
-
-              {/* Seção de Segurança & Senha de Acesso */}
-              <div className="pt-4 border-t border-zinc-800/80 space-y-3">
-                <div className="flex items-center gap-2">
-                  <KeyRound className="w-4 h-4 text-amber-400" />
-                  <h4 className="font-bold text-sm text-white">Segurança do Painel & Senha do Wi-Fi</h4>
-                </div>
-                <p className="text-xs text-zinc-400">
-                  Altere a senha que impede clientes ou curiosos conectados no Wi-Fi de acessar o sistema:
-                </p>
-
-                <div>
-                  <label className="text-xs font-bold text-zinc-400 uppercase">Definir Nova Senha de Administrador</label>
-                  <input 
-                    type="password" 
-                    placeholder="Deixe em branco para manter a senha atual"
-                    value={novaSenhaAdmin}
-                    onChange={(e) => setNovaSenhaAdmin(e.target.value)}
-                    className="w-full mt-1 bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium font-mono"
-                  />
-                  <span className="text-[10px] text-zinc-500 mt-1 block">
-                    Mínimo de 4 dígitos. Senha padrão inicial: <strong className="text-zinc-400 font-mono">admin123</strong>
-                  </span>
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <button 
-                  type="submit"
-                  className="bg-amber-500 hover:bg-amber-400 text-black px-6 py-2.5 rounded-xl font-bold text-sm transition shadow-lg shadow-amber-500/10"
-                >
-                  Salvar Alterações
-                </button>
-              </div>
+              )}
             </form>
 
-            {/* CARD DE ATUALIZAÇÕES DO SISTEMA (GITHUB AUTO-UPDATER) */}
-            <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 max-w-2xl space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
-                    <Sparkles className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-extrabold text-white flex items-center gap-2">
-                      Atualizações do Sistema
-                      {statusAtualizacao?.temAtualizacao && (
-                        <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
-                          Nova Versão Disponível
-                        </span>
-                      )}
-                    </h3>
-                    <p className="text-xs text-zinc-400">
-                      Versão do código instalada neste notebook e sincronização remota via GitHub
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => checarAtualizacoes(false)}
-                  disabled={verificandoAtualizacao || aplicandoAtualizacao}
-                  className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold border border-zinc-700 flex items-center gap-1.5 transition disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${verificandoAtualizacao ? "animate-spin" : ""}`} />
-                  {verificandoAtualizacao ? "Verificando..." : "Buscar Atualizações"}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
-                  <span className="text-[10px] uppercase font-bold text-zinc-500 block">Versão Instalada</span>
-                  <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5 mt-1">
-                    <GitBranch className="w-3.5 h-3.5 text-amber-400" />
-                    {statusAtualizacao?.versaoAtual ? `commit #${statusAtualizacao.versaoAtual}` : "v1.0.0"}
-                  </span>
-                  {statusAtualizacao?.dataCommit && (
-                    <span className="text-[10px] text-zinc-500 block mt-1">Data: {statusAtualizacao.dataCommit}</span>
-                  )}
-                </div>
-
-                <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
-                  <span className="text-[10px] uppercase font-bold text-zinc-500 block">Status da Conexão</span>
-                  <span className="text-xs font-bold text-white flex items-center gap-1.5 mt-1">
-                    <span className={`w-2 h-2 rounded-full ${statusAtualizacao?.temAtualizacao ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
-                    {statusAtualizacao?.temAtualizacao 
-                      ? `${statusAtualizacao.commitsAtras} melhoria(s) pendente(s)` 
-                      : (statusAtualizacao?.configurado ? "Sistema 100% Atualizado" : "Repositório Local Pronto")}
-                  </span>
-                  <span className="text-[10px] text-zinc-500 block mt-1 truncate">
-                    {statusAtualizacao?.remoteUrl || "GitHub Remoto"}
-                  </span>
-                </div>
-              </div>
-
-              {statusAtualizacao?.temAtualizacao && (
-                <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-3">
-                  <div>
-                    <h4 className="text-xs font-bold text-emerald-300">🎉 O que mudou nesta atualização:</h4>
-                    <ul className="mt-1.5 space-y-1 text-xs text-zinc-300">
-                      {statusAtualizacao.novidades?.map((novidade, idx) => (
-                        <li key={idx} className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <span className="text-emerald-400 font-bold">•</span> {novidade}
-                        </li>
-                      ))}
-                    </ul>
+            {/* CARD 7: ATUALIZAÇÕES DO SISTEMA (GITHUB AUTO-UPDATER) */}
+            {(subTabConfig === "todas" || subTabConfig === "atualizacoes") && (
+              <div className="bg-zinc-900/60 p-6 rounded-3xl border border-zinc-800/80 space-y-4 shadow-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-zinc-800/80">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 bg-amber-500/10 rounded-2xl border border-amber-500/20 text-amber-400">
+                      <RefreshCw className="w-5 h-5 text-amber-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                        Atualizações do Sistema
+                        {statusAtualizacao?.temAtualizacao && (
+                          <span className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider animate-pulse">
+                            Nova Versão Disponível
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-xs text-zinc-400">
+                        Versão do código instalada neste notebook e sincronização remota via GitHub
+                      </p>
+                    </div>
                   </div>
 
                   <button
                     type="button"
-                    onClick={aplicarAtualizacao}
-                    disabled={aplicandoAtualizacao}
-                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                    onClick={() => checarAtualizacoes(false)}
+                    disabled={verificandoAtualizacao || aplicandoAtualizacao}
+                    className="px-3.5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-xl text-xs font-bold border border-zinc-700 flex items-center gap-1.5 transition disabled:opacity-50 whitespace-nowrap"
                   >
-                    <Download className={`w-4 h-4 ${aplicandoAtualizacao ? "animate-bounce" : ""}`} />
-                    {aplicandoAtualizacao ? "Baixando e Aplicando Atualizações..." : "Instalar Atualizações Agora (1-Clique)"}
+                    <RefreshCw className={`w-3.5 h-3.5 text-amber-400 ${verificandoAtualizacao ? "animate-spin" : ""}`} />
+                    {verificandoAtualizacao ? "Verificando..." : "Buscar Atualizações"}
                   </button>
                 </div>
-              )}
 
-              {statusAtualizacao?.aviso && (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
-                  {statusAtualizacao.aviso}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
+                    <span className="text-[10px] uppercase font-bold text-zinc-500 block">Versão Instalada</span>
+                    <span className="text-xs font-mono font-bold text-white flex items-center gap-1.5 mt-1">
+                      <GitBranch className="w-3.5 h-3.5 text-amber-400" />
+                      {statusAtualizacao?.versaoAtual ? `commit #${statusAtualizacao.versaoAtual}` : "v1.0.0"}
+                    </span>
+                    {statusAtualizacao?.dataCommit && (
+                      <span className="text-[10px] text-zinc-500 block mt-1">Data: {statusAtualizacao.dataCommit}</span>
+                    )}
+                  </div>
+
+                  <div className="bg-zinc-950/70 p-3.5 rounded-2xl border border-zinc-800/70">
+                    <span className="text-[10px] uppercase font-bold text-zinc-500 block">Status da Conexão</span>
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5 mt-1">
+                      <span className={`w-2 h-2 rounded-full ${statusAtualizacao?.temAtualizacao ? "bg-amber-400 animate-ping" : "bg-emerald-400"}`} />
+                      {statusAtualizacao?.temAtualizacao 
+                        ? `${statusAtualizacao.commitsAtras} melhoria(s) pendente(s)` 
+                        : (statusAtualizacao?.configurado ? "Sistema 100% Atualizado" : "Repositório Local Pronto")}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 block mt-1 truncate">
+                      {statusAtualizacao?.remoteUrl || "GitHub Remoto"}
+                    </span>
+                  </div>
                 </div>
-              )}
 
-              <p className="text-[11px] text-zinc-500 leading-relaxed">
-                🛡️ <strong className="text-zinc-400">Proteção de Dados:</strong> O banco de dados de clientes, cortes registrados e a conexão do WhatsApp estão protegidos no <code>.gitignore</code> e <strong>nunca</strong> são afetados ou sobrescritos durante atualizações.
-              </p>
-            </div>
+                {statusAtualizacao?.temAtualizacao && (
+                  <div className="p-4 bg-emerald-950/30 border border-emerald-500/30 rounded-2xl space-y-3">
+                    <div>
+                      <h4 className="text-xs font-bold text-emerald-300">🎉 O que mudou nesta atualização:</h4>
+                      <ul className="mt-1.5 space-y-1 text-xs text-zinc-300">
+                        {statusAtualizacao.novidades?.map((novidade, idx) => (
+                          <li key={idx} className="flex items-center gap-1.5 font-mono text-[11px]">
+                            <span className="text-emerald-400 font-bold">•</span> {novidade}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={aplicarAtualizacao}
+                      disabled={aplicandoAtualizacao}
+                      className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs rounded-xl transition flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
+                    >
+                      <Download className={`w-4 h-4 ${aplicandoAtualizacao ? "animate-bounce" : ""}`} />
+                      {aplicandoAtualizacao ? "Baixando e Aplicando Atualizações..." : "Instalar Atualizações Agora (1-Clique)"}
+                    </button>
+                  </div>
+                )}
+
+                {statusAtualizacao?.aviso && (
+                  <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-300">
+                    {statusAtualizacao.aviso}
+                  </div>
+                )}
+
+                <p className="text-[11px] text-zinc-500 leading-relaxed">
+                  🛡️ <strong className="text-zinc-400">Proteção de Dados:</strong> O banco de dados de clientes, cortes registrados e a conexão do WhatsApp estão protegidos no <code>.gitignore</code> e <strong>nunca</strong> são afetados ou sobrescritos durante atualizações.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

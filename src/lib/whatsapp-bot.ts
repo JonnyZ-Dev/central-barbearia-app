@@ -227,6 +227,92 @@ export function carregarAtendimentosDoBanco() {
   }
 }
 
+export function registrarAtividadeConversa(
+  remoteJid: string,
+  dados: {
+    numero?: string;
+    nome?: string;
+    ultimaMensagem?: string;
+    ultimoRemetente?: "CLIENTE" | "HUMANO" | "IA";
+    status?: "IA" | "HUMANO";
+    motivoPausa?: string;
+  }
+) {
+  try {
+    const db = getDb();
+    const agora = Date.now();
+    const numeroLimpo = dados.numero || remoteJid.replace(/[^0-9]/g, "");
+    const nome = dados.nome || null;
+    const msg = dados.ultimaMensagem || null;
+    const remetente = dados.ultimoRemetente || "CLIENTE";
+    const status = dados.status || "IA";
+    const motivo = dados.motivoPausa || null;
+
+    db.prepare(`
+      INSERT INTO conversas_whatsapp (remote_jid, numero, nome, ultima_mensagem, ultimo_remetente, status, motivo_pausa, atualizado_em, criado_em)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(remote_jid) DO UPDATE SET
+        numero = excluded.numero,
+        nome = CASE WHEN excluded.nome IS NOT NULL AND excluded.nome != '' THEN excluded.nome ELSE conversas_whatsapp.nome END,
+        ultima_mensagem = CASE WHEN excluded.ultima_mensagem IS NOT NULL AND excluded.ultima_mensagem != '' THEN excluded.ultima_mensagem ELSE conversas_whatsapp.ultima_mensagem END,
+        ultimo_remetente = excluded.ultimo_remetente,
+        status = excluded.status,
+        motivo_pausa = excluded.motivo_pausa,
+        atualizado_em = excluded.atualizado_em
+    `).run(remoteJid, numeroLimpo, nome, msg, remetente, status, motivo, agora, agora);
+  } catch (err: any) {
+    console.error("[CONVERSAS] Erro ao registrar atividade:", err.message);
+  }
+}
+
+export function listarConversasCompletas() {
+  try {
+    const db = getDb();
+    const rows: any[] = db.prepare("SELECT * FROM conversas_whatsapp ORDER BY atualizado_em DESC LIMIT 150").all() || [];
+    const agora = Date.now();
+
+    // Garantir que qualquer atendimento humano ativo no cache apareça mesmo se ainda não registrado no banco
+    const jidsExistentes = new Set(rows.map(r => r.remote_jid));
+    for (const [jid, cacheItem] of atendimentosHumanosCache.entries()) {
+      if (cacheItem.expiraEm > agora && !jidsExistentes.has(jid)) {
+        rows.unshift({
+          remote_jid: jid,
+          numero: cacheItem.numero || jid.replace(/[^0-9]/g, ""),
+          nome: cacheItem.nome || "Cliente em Atendimento",
+          ultima_mensagem: "(Atendimento humano em andamento)",
+          ultimo_remetente: "HUMANO",
+          status: "HUMANO",
+          motivo_pausa: cacheItem.motivo || "Atendimento assumido",
+          atualizado_em: agora,
+          criado_em: agora
+        });
+      }
+    }
+
+    return rows.map(r => {
+      const estaPausado = verificarAtendimentoHumanoAtivo(r.remote_jid);
+      const itemCache = atendimentosHumanosCache.get(r.remote_jid);
+      const minutosRestantes = itemCache && itemCache.expiraEm > agora ? Math.round((itemCache.expiraEm - agora) / 60000) : 0;
+
+      return {
+        remote_jid: r.remote_jid,
+        numero: r.numero,
+        nome: r.nome || "Cliente",
+        ultima_mensagem: r.ultima_mensagem || "",
+        ultimo_remetente: r.ultimo_remetente || "CLIENTE",
+        status: estaPausado ? "HUMANO" : "IA",
+        motivo_pausa: estaPausado ? (itemCache?.motivo || r.motivo_pausa || "Atendimento assumido") : null,
+        minutos_restantes: minutosRestantes,
+        atualizado_em: r.atualizado_em,
+        criado_em: r.criado_em
+      };
+    });
+  } catch (err: any) {
+    console.error("[CONVERSAS] Erro ao listar conversas:", err.message);
+    return [];
+  }
+}
+
 export function ativarPausaAtendimentoHumano(
   remoteJid: string,
   motivo: string,
@@ -260,6 +346,14 @@ export function ativarPausaAtendimentoHumano(
         expira_em = excluded.expira_em
     `).run(remoteJid, numFormatado, nomeFormatado, motivo, iniciadoEm, expiraEm);
 
+    registrarAtividadeConversa(remoteJid, {
+      numero: numFormatado,
+      nome: nomeFormatado,
+      status: "HUMANO",
+      motivoPausa: motivo,
+      ultimoRemetente: "HUMANO"
+    });
+
     console.log(`[PAUSA ROBÔ] Robô pausado para ${remoteJid} por ${minutosPausa} min. Motivo: ${motivo}`);
   } catch (e) {
     console.error("Erro ao ativar pausa de atendimento humano:", e);
@@ -286,6 +380,10 @@ export function removerPausaAtendimentoHumano(remoteJid: string) {
   atendimentosHumanosCache.delete(remoteJid);
   try {
     getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ?").run(remoteJid);
+    registrarAtividadeConversa(remoteJid, {
+      status: "IA",
+      motivoPausa: undefined
+    });
     console.log(`[PAUSA ROBÔ] Robô reativado para ${remoteJid}`);
   } catch (e) {}
 }
@@ -902,6 +1000,14 @@ export async function iniciarWhatsAppBot() {
               (msg as any)?.pushName,
               telLimpo
             );
+            registrarAtividadeConversa(remoteJid, {
+              numero: telLimpo,
+              nome: (msg as any)?.pushName,
+              ultimaMensagem: textoAtendente,
+              ultimoRemetente: "HUMANO",
+              status: "HUMANO",
+              motivoPausa: "Atendente conversando no celular"
+            });
             console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. Robô pausado para esta conversa.`);
             continue;
           }
@@ -1403,6 +1509,15 @@ async function processarMensagemRobo(
 
   const nomeCliente = String(mensalista?.nome || extraInfo?.pushName || "Amigo");
   const telefoneRealCliente = String(mensalista?.whatsapp || telefoneParaBusca || numeroLimpo);
+
+  // Registrar atividade da conversa no histórico permanente de atendimentos
+  registrarAtividadeConversa(remoteJid, {
+    numero: telefoneRealCliente,
+    nome: nomeCliente,
+    ultimaMensagem: texto,
+    ultimoRemetente: "CLIENTE",
+    status: verificarAtendimentoHumanoAtivo(remoteJid) ? "HUMANO" : "IA"
+  });
   const barbearia = String(config.nome_barbearia || "GM Barbershop");
   const linkBooksy = String(config.link_booksy || "https://booksy.com");
   const chavePix = String(config.chave_pix || config.telefone_principal || "11960129564");
@@ -1716,6 +1831,13 @@ async function processarMensagemRobo(
     const respostaIa = await gerarRespostaGemini(texto, remoteJid, nomeCliente);
     if (respostaIa && respostaIa.trim().length > 0) {
       await enviarRespostaHumanizada(respostaIa);
+      registrarAtividadeConversa(remoteJid, {
+        numero: telefoneRealCliente,
+        nome: nomeCliente,
+        ultimaMensagem: respostaIa,
+        ultimoRemetente: "IA",
+        status: "IA"
+      });
       return;
     }
   }
