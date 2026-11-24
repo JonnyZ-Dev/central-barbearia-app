@@ -108,39 +108,53 @@ export async function gerarRespostaGemini(
       { role: "user", parts: [{ text: mensagemCliente }] }
     ];
 
-    // Chamada à API oficial do Google Gemini (utilizando o modelo mais rápido e econômico gemini-1.5-flash)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Chamada à API oficial do Google Gemini (com suporte aos modelos mais recentes e fallback automático)
+    const modelosTentativa = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-1.5-flash"];
+    let respostaTexto: string | null = null;
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 4500); // Timeout rápido de 4.5 segundos para não atrasar o WhatsApp
+    for (const modelo of modelosTentativa) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 4500); // Timeout rápido de 4.5 segundos para não atrasar o WhatsApp
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        system_instruction: {
-          parts: [{ text: systemInstruction }]
-        },
-        contents: contentsPayload,
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 250,
-          topP: 0.85
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: {
+              parts: [{ text: systemInstruction }]
+            },
+            contents: contentsPayload,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 1000,
+              topP: 0.85,
+              thinkingConfig: {
+                thinkingBudget: 0
+              }
+            }
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const json = await response.json();
+          const candidateParts = json?.candidates?.[0]?.content?.parts;
+          const texto = candidateParts?.find((p: any) => p.text)?.text?.trim() || candidateParts?.[0]?.text?.trim();
+          if (texto) {
+            respostaTexto = texto;
+            break;
+          }
+        } else {
+          console.warn(`[GEMINI IA] Modelo ${modelo} retornou status ${response.status}. Tentando próximo...`);
         }
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.warn(`[GEMINI IA] Erro na API do Google (${response.status}): ${errorText.slice(0, 200)}`);
-      return null; // Fallback para o modo local
+      } catch (err: any) {
+        console.warn(`[GEMINI IA] Erro ao consultar modelo ${modelo}: ${err.message}`);
+      }
     }
-
-    const json = await response.json();
-    const respostaTexto = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
 
     if (!respostaTexto) {
       return null;
@@ -167,33 +181,47 @@ export async function gerarRespostaGemini(
 }
 
 // Helper para validar a chave de API na tela de configurações
-export async function testarChaveGemini(apiKey: string): Promise<{ success: boolean; erro?: string }> {
+export async function testarChaveGemini(apiKey: string): Promise<{ success: boolean; erro?: string; modelo?: string }> {
   try {
     if (!apiKey || apiKey.trim().length < 15) {
       return { success: false, erro: "Chave de API inválida ou muito curta." };
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 6000);
+    const modelos = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-1.5-flash"];
+    let ultimoErro = "";
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }]
-      }),
-      signal: controller.signal
-    });
+    for (const modelo of modelos) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey.trim()}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 6000);
 
-    clearTimeout(timeout);
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }],
+            generationConfig: {
+              maxOutputTokens: 50,
+              thinkingConfig: { thinkingBudget: 0 }
+            }
+          }),
+          signal: controller.signal
+        });
 
-    if (!response.ok) {
-      const err = await response.text();
-      return { success: false, erro: `Google recusou a chave (${response.status}): Verifique se a chave está ativa.` };
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          return { success: true, modelo };
+        } else {
+          ultimoErro = `Google recusou com status ${response.status} no modelo ${modelo}`;
+        }
+      } catch (err: any) {
+        ultimoErro = `Falha de conexão: ${err.message}`;
+      }
     }
 
-    return { success: true };
+    return { success: false, erro: ultimoErro || "Não foi possível validar a chave com os modelos do Gemini." };
   } catch (e: any) {
     return { success: false, erro: `Falha de conexão com o Google: ${e.message}` };
   }

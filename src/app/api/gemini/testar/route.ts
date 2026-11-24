@@ -6,11 +6,15 @@ export async function POST(req: Request) {
     const { apiKey } = await req.json();
     const res = await testarChaveGemini(apiKey);
     if (res.success) {
-      return NextResponse.json({ success: true, mensagem: "Chave do Google Gemini validada com sucesso! 🚀" });
+      return NextResponse.json({
+        success: true,
+        message: `Chave do Google Gemini validada com sucesso! (${res.modelo || "gemini-3.5-flash"}) 🚀`,
+        mensagem: `Chave do Google Gemini validada com sucesso! (${res.modelo || "gemini-3.5-flash"}) 🚀`
+      });
     } else {
-      return NextResponse.json({ success: false, erro: res.erro }, { status: 400 });
+      return NextResponse.json({ success: false, error: res.erro, erro: res.erro }, { status: 400 });
     }
   } catch (e: any) {
-    return NextResponse.json({ success: false, erro: e.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: e.message, erro: e.message }, { status: 500 });
   }
 }
