@@ -130,42 +130,55 @@ const atendimentosHumanosCache = new Map<string, {
 function ehComandoReativarBot(texto: string): boolean {
   const t = (texto || "").trim().toLowerCase();
   if (!t) return false;
+
+  // Normalizar removendo pontuações como vírgulas, exclamações, etc.
+  const limpo = t.replace(/[!?,.;:\-_]/g, " ").replace(/\s+/g, " ").trim();
+
+  const comandos = [
+    "#sair", "sair", "#cancelar", "cancelar",
+    "#menu", "menu", "#opcoes", "#opções", "opcoes", "opções", "#ajuda", "ajuda",
+    "#ativar", "ativar", "#reativar", "reativar", "#bot",
+    "início", "inicio", "voltar", "voltar ao menu", "0", 
+    "#voltar", "comecar", "começar"
+  ];
+
+  if (comandos.includes(t) || comandos.includes(limpo)) {
+    return true;
+  }
+
+  // Qualquer saudação (mesmo com pontuação ou combinada: "oi", "oi boa noite", "ola tudo bem")
   if (
-    [
-      "#sair", "sair", "#cancelar", "cancelar",
-      "#menu", "menu", "#opcoes", "#opções", "opcoes", "opções", "#ajuda", "ajuda",
-      "#ativar", "ativar", "#reativar", "reativar", "#bot",
-      "oi", "ola", "olá", "oie", "opa", "salve", "fala", "eai", "e ai", 
-      "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", 
-      "início", "inicio", "voltar", "voltar ao menu", "0", 
-      "#voltar", "comecar", "começar"
-    ].includes(t)
+    /\b(oi|ola|olá|oie|opa|salve|fala|eai|e ai|bom dia|boa tarde|boa noite|tudo bem|td bem)\b/.test(limpo) ||
+    limpo.startsWith("oi") ||
+    limpo.startsWith("ola") ||
+    limpo.startsWith("olá")
   ) {
     return true;
   }
+
   if (
-    t.includes("agendar") ||
-    t.includes("marcar") ||
-    t.includes("horario") ||
-    t.includes("horário") ||
-    t.includes("vaga") ||
-    t.includes("booksy") ||
-    t.includes("preco") ||
-    t.includes("preço") ||
-    t.includes("quanto custa") ||
-    t.includes("valor") ||
-    t.includes("tabela") ||
-    t.includes("onde fica") ||
-    t.includes("endereco") ||
-    t.includes("endereço") ||
-    t.includes("como chegar") ||
-    t.includes("pix") ||
-    t.includes("pagamento") ||
-    t.includes("cartao") ||
-    t.includes("cartão") ||
-    t.includes("plano") ||
-    t.includes("mensalista") ||
-    t.includes("assinatura")
+    limpo.includes("agendar") ||
+    limpo.includes("marcar") ||
+    limpo.includes("horario") ||
+    limpo.includes("horário") ||
+    limpo.includes("vaga") ||
+    limpo.includes("booksy") ||
+    limpo.includes("preco") ||
+    limpo.includes("preço") ||
+    limpo.includes("quanto custa") ||
+    limpo.includes("valor") ||
+    limpo.includes("tabela") ||
+    limpo.includes("onde fica") ||
+    limpo.includes("endereco") ||
+    limpo.includes("endereço") ||
+    limpo.includes("como chegar") ||
+    limpo.includes("pix") ||
+    limpo.includes("pagamento") ||
+    limpo.includes("cartao") ||
+    limpo.includes("cartão") ||
+    limpo.includes("plano") ||
+    limpo.includes("mensalista") ||
+    limpo.includes("assinatura")
   ) {
     return true;
   }
