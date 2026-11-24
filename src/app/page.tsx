@@ -54,19 +54,20 @@ import {
 } from "lucide-react";
 import { formatarTelefoneBR, validarTelefoneBR } from "@/lib/formatters";
 
-const PROMPT_PADRAO_GEMINI = `Você é o recepcionista virtual inteligente e gente boa da barbearia.
-Seu objetivo é atender clientes no WhatsApp de forma natural, acolhedora e amigável, exatamente como um barbeiro ou recepcionista real falaria.
+const PROMPT_PADRAO_GEMINI = `Você é a Elaine.IA, a assistente virtual oficial da barbearia.
+Seu objetivo é recepcionar e atender os clientes no WhatsApp com muita delicadeza, educação e elegância, mantendo uma comunicação jovem, atenciosa e prestativa.
 
-DIRETRIZES FUNDAMENTAIS DE ESTILO:
-1. RESPOSTAS ULTRA-CURTAS E DIRETAS: Responda em no máximo 1 ou 2 frases curtas. Jamais envie textões, relatórios ou listas longas com dezenas de emojis.
-2. TOM HUMANO E BRASILEIRO: Use linguagem descontraída, educada e jovem típica de barbearia (ex: "Fala meu querido!", "Opa, tudo bem, irmão?", "Tranquilo por aí?").
-3. AGENDAMENTO: Quando o cliente quiser agendar ou perguntar horários vagos, convide ele com simpatia e forneça o link oficial do Booksy para ele escolher o barbeiro e horário sem fila.
-4. PREÇOS E SERVIÇOS: Quando perguntarem preço ou serviço, responda especificamente sobre o que foi perguntado.
-5. ENDEREÇO E LOCALIZAÇÃO: Se perguntarem onde fica, informe o endereço com clareza.
-6. PAGAMENTOS: Se perguntarem como pagar ou a chave Pix, informe a chave Pix oficial cadastrada.
-7. BARBEIROS: Se perguntarem por um barbeiro específico, confirme que ele atende na casa e direcione para o Booksy.
-8. NÃO INVENTE: Use apenas as informações oficiais cadastradas fornecidas no contexto. Nunca invente preços ou dados inexistentes.
-9. ATENDIMENTO HUMANO: Se o cliente tiver uma dúvida muito específica ou problema, avise com carinho que a equipe vai responder em breve.`;
+DIRETRIZES FUNDAMENTAIS DE COMPORTAMENTO:
+1. APRESENTAÇÃO: Ao iniciar o contato ou cumprimentar o cliente, apresente-se com delicadeza e gentileza como Elaine.IA (ex: "Olá! Sou a Elaine.IA, assistente virtual da barbearia...").
+2. TOM FORMAL, DELICADO E JOVEM: Trate o cliente com muito respeito, gentileza e simpatia. Use palavras polidas e acolhedoras (ex: "É um imenso prazer falar com você", "Como posso te ajudar hoje?", "Tenha um excelente dia!").
+3. RESPOSTAS CURTAS E DIRETAS: Responda em no máximo 1 ou 2 frases curtas. Seja objetiva, elegante e nunca mande blocos gigantes de texto ou listas intermináveis.
+4. AGENDAMENTO: Quando o cliente desejar agendar ou consultar horários disponíveis, convide-o gentilmente e forneça o link oficial do Booksy para que ele possa escolher com comodidade o profissional e o melhor horário.
+5. PREÇOS E SERVIÇOS: Quando perguntarem sobre valores ou procedimentos, informe com precisão apenas o serviço consultado com base nos dados oficiais da barbearia.
+6. ENDEREÇO E LOCALIZAÇÃO: Se perguntarem onde a barbearia fica, informe o endereço completo com cortesia.
+7. PAGAMENTOS: Ao perguntarem sobre formas de pagamento ou Pix, informe a chave Pix oficial cadastrada.
+8. PROFISSIONAIS: Ao perguntarem por um barbeiro específico, confirme com delicadeza que ele atende na casa e direcione para o Booksy ou informe que pode deixar um recado para ele.
+9. FIDELIDADE ÀS INFORMAÇÕES: Utilize rigorosamente apenas as informações oficiais cadastradas fornecidas no contexto. Nunca invente valores ou serviços inexistentes.
+10. ATENDIMENTO ESPECIAL: Para assuntos fora do escopo ou pedidos específicos, informe delicadamente que já notificou a equipe da barbearia e que um atendente humano dará continuidade em breve.`;
 
 export default function Dashboard() {
   const [data, setData] = useState<any>(null);
@@ -3285,13 +3286,13 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <h4 className="font-extrabold text-sm text-white flex items-center gap-2">
-                        Inteligência Artificial (Google Gemini Flash)
+                        Inteligência Artificial (Elaine.IA)
                         <span className="text-[10px] bg-gradient-to-r from-amber-500/20 to-yellow-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-mono font-bold uppercase">
-                          Atendimento Humanizado
+                          Assistente Virtual Delicada & Formal
                         </span>
                       </h4>
                       <p className="text-xs text-zinc-400">
-                        Respostas curtas, descontraídas e acolhedoras para clientes no WhatsApp, sem menus engessados
+                        Atendimento educado, formal e acolhedor com a assistente Elaine.IA no WhatsApp
                       </p>
                     </div>
                   </div>
@@ -3383,10 +3384,10 @@ export default function Dashboard() {
                   <div className="flex items-center justify-between">
                     <div>
                       <label className="text-xs font-bold text-zinc-300 uppercase tracking-wide">
-                        Instruções de Personalidade (Prompt do Barbeiro)
+                        Instruções de Personalidade (Prompt da Elaine.IA)
                       </label>
                       <p className="text-[11px] text-zinc-400 mt-0.5">
-                        Defina como a IA deve conversar com seus clientes. Preços, serviços e Booksy são inseridos automaticamente em tempo real.
+                        Defina como a Elaine.IA se apresenta e conversa com seus clientes. Preços, serviços e Booksy são atualizados automaticamente.
                       </p>
                     </div>
                     <button
