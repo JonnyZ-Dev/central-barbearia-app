@@ -395,8 +395,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     carregarConversas();
+    verificarStatusWhats();
     const intervalConversas = setInterval(() => {
       carregarConversas();
+      verificarStatusWhats();
     }, 4000);
     return () => clearInterval(intervalConversas);
   }, []);
@@ -1479,7 +1481,25 @@ export default function Dashboard() {
                 <MessageSquare className="w-4 h-4" />
                 Robô do WhatsApp
               </div>
-              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span className="flex items-center gap-1.5">
+                {botStatus.status === "CONECTADO" ? (
+                  botStatus.pausado ? (
+                    <span className="text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded-full font-bold">
+                      Pausa
+                    </span>
+                  ) : (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/50"></span>
+                  )
+                ) : botStatus.status === "AGUARDANDO_QR" ? (
+                  <span className="text-[10px] bg-amber-500 text-black px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                    QR Code
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-zinc-800 text-zinc-400 border border-zinc-700 px-1.5 py-0.5 rounded-full font-medium">
+                    Desconectado
+                  </span>
+                )}
+              </span>
             </button>
 
             <button 
@@ -3019,6 +3039,54 @@ export default function Dashboard() {
                 </button>
               </div>
             </div>
+
+            {/* Banner de Aviso de Conexão do WhatsApp */}
+            {botStatus.status !== "CONECTADO" ? (
+              <div className="p-4 bg-amber-500/15 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-200 shadow-lg shadow-amber-500/5">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div className="text-xs">
+                    <strong className="text-white block font-bold">
+                      {botStatus.status === "AGUARDANDO_QR"
+                        ? "O WhatsApp está aguardando leitura do QR Code"
+                        : "O Robô do WhatsApp está desconectado no momento"}
+                    </strong>
+                    <span>
+                      {botStatus.status === "AGUARDANDO_QR"
+                        ? "Abra a aba Robô do WhatsApp para apontar a câmera do celular e escanear o QR Code."
+                        : "O processo do robô não está ativo em memória. Clique no botão ao lado para conectar."}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("whatsapp")}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black rounded-xl transition whitespace-nowrap shadow-md shadow-amber-500/20"
+                >
+                  {botStatus.status === "AGUARDANDO_QR" ? "Escanear QR Code Agora" : "Conectar WhatsApp"}
+                </button>
+              </div>
+            ) : botStatus.pausado ? (
+              <div className="p-4 bg-amber-950/30 border border-amber-500/40 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-amber-200 shadow-lg shadow-amber-500/5">
+                <div className="flex items-center gap-3">
+                  <PauseCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div className="text-xs">
+                    <strong className="text-white block font-bold">
+                      O Robô do WhatsApp está em Pausa Global Temporária.
+                    </strong>
+                    <span>A conexão está ativa, mas todas as respostas automáticas estão suspensas até serem retomadas.</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => alternarPausaRobo(false)}
+                  disabled={pausandoBot}
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black text-xs font-black rounded-xl transition whitespace-nowrap shadow-md shadow-emerald-500/20"
+                >
+                  {pausandoBot ? "Retomando..." : "Retomar Robô Agora"}
+                </button>
+              </div>
+            ) : null}
 
             {/* Cards de Métricas e Status Rápido */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

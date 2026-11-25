@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { garantirBotIniciadoSeCredsExistem } from "@/lib/whatsapp-bot";
 import os from "os";
 import path from "path";
 
@@ -19,6 +20,7 @@ function getLocalIp(): string {
 
 export async function GET() {
   try {
+    garantirBotIniciadoSeCredsExistem();
     const db = getDb();
     
     // Obter dados da barbearia

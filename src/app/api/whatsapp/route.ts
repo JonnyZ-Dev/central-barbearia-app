@@ -1,24 +1,19 @@
 import { NextResponse } from "next/server";
-import { iniciarWhatsAppBot, getBotStatus, desconectarBot, setRoboPausado, isRoboPausado } from "@/lib/whatsapp-bot";
-import fs from "fs";
-import path from "path";
+import { 
+  iniciarWhatsAppBot, 
+  getBotStatus, 
+  desconectarBot, 
+  setRoboPausado, 
+  isRoboPausado,
+  garantirBotIniciadoSeCredsExistem 
+} from "@/lib/whatsapp-bot";
 
 let autoConnectTentado = false;
 
 export async function GET() {
   try {
+    await garantirBotIniciadoSeCredsExistem();
     const status = getBotStatus();
-
-    // Se o bot estiver desconectado e tiver credenciais salvas no banco, reconecta automaticamente no boot
-    const credsPath = path.join(process.cwd(), "database", "auth_info_baileys", "creds.json");
-    if (status.status === "DESCONECTADO" && !autoConnectTentado && fs.existsSync(credsPath)) {
-      autoConnectTentado = true;
-      iniciarWhatsAppBot().catch((e) => {
-        console.error("[AUTO-CONNECT] Erro ao reconectar bot:", e);
-        autoConnectTentado = false;
-      });
-    }
-
     return NextResponse.json(status);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -2,11 +2,15 @@ import { NextResponse } from "next/server";
 import { 
   listarConversasCompletas, 
   ativarPausaAtendimentoHumano, 
-  removerPausaAtendimentoHumano 
+  removerPausaAtendimentoHumano,
+  garantirBotIniciadoSeCredsExistem
 } from "@/lib/whatsapp-bot";
 
 export async function GET() {
   try {
+    // Garante que o bot seja reconectado automaticamente se tiver credenciais salvas
+    await garantirBotIniciadoSeCredsExistem();
+
     const conversas = listarConversasCompletas();
     const totalIa = conversas.filter(c => c.status === "IA").length;
     const totalHumano = conversas.filter(c => c.status === "HUMANO").length;

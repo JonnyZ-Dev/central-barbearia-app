@@ -745,6 +745,18 @@ async function dispararProcessamentoChat(remoteJid: string) {
   }
 }
 
+export async function garantirBotIniciadoSeCredsExistem() {
+  try {
+    const credsPath = path.join(AUTH_DIR, "creds.json");
+    if (connectionStatus === "DESCONECTADO" && !isConnecting && fs.existsSync(credsPath)) {
+      console.log("[AUTO-BOOT] Credenciais do WhatsApp encontradas! Reconectando automaticamente...");
+      iniciarWhatsAppBot().catch((err) => {
+        console.error("[AUTO-BOOT] Erro ao auto-iniciar bot:", err.message);
+      });
+    }
+  } catch (e) {}
+}
+
 export async function iniciarWhatsAppBot() {
   if (sock && connectionStatus === "CONECTADO") {
     return { status: connectionStatus, qr: currentQr, numero: connectedNumber, pausado: isRoboPausado() };
