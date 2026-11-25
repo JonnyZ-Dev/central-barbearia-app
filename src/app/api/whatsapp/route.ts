@@ -46,6 +46,7 @@ export async function POST(req: Request) {
     }
 
     autoConnectTentado = true;
+    setRoboPausado(false);
     const res = await iniciarWhatsAppBot();
     return NextResponse.json(res);
   } catch (error: any) {

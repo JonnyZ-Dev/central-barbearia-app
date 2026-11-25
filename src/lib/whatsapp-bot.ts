@@ -749,6 +749,7 @@ export async function garantirBotIniciadoSeCredsExistem() {
   try {
     const credsPath = path.join(AUTH_DIR, "creds.json");
     if (connectionStatus === "DESCONECTADO" && !isConnecting && fs.existsSync(credsPath)) {
+      setRoboPausado(false);
       console.log("[AUTO-BOOT] Credenciais do WhatsApp encontradas! Reconectando automaticamente...");
       iniciarWhatsAppBot().catch((err) => {
         console.error("[AUTO-BOOT] Erro ao auto-iniciar bot:", err.message);
@@ -758,6 +759,7 @@ export async function garantirBotIniciadoSeCredsExistem() {
 }
 
 export async function iniciarWhatsAppBot() {
+  setRoboPausado(false);
   if (sock && connectionStatus === "CONECTADO") {
     return { status: connectionStatus, qr: currentQr, numero: connectedNumber, pausado: isRoboPausado() };
   }
@@ -1050,36 +1052,48 @@ export async function iniciarWhatsAppBot() {
             ""
           ).trim().toLowerCase();
 
-          // 3. VERIFICAR SE O ATENDIMENTO HUMANO ESTÁ ATIVO PARA ESTA CONVERSA
-                    // VERIFICAÇÃO DE PAUSA GLOBAL DO ROBÔ (Pausado no painel ou via comando)
-          if (isRoboPausado()) {
-            console.log(`[ROBÔ PAUSADO GLOBALMENTE] Mensagem de ${remoteJid} ignorada enquanto em pausa: '${textoCliente}'`);
+          // Ignorar mensagens antigas de sincronização de histórico (> 90 segundos)
+          const timestampMsg = Number(msg.messageTimestamp) * 1000;
+          if (timestampMsg && Date.now() - timestampMsg > 90000) {
             continue;
           }
 
-          if (verificarAtendimentoHumanoAtivo(remoteJid)) {
-            // Se o cliente digitar "oi", "menu", "voltar", etc., reativa o robô na hora!
-            if (ehComandoReativarBot(textoCliente)) {
-              removerPausaAtendimentoHumano(remoteJid);
-              console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando ('${textoCliente}')!`);
-              // Segue o fluxo normal para adicionar ao buffer e responder o menu!
-            } else {
-              // Renova a janela de pausa para continuar a conversa livre sem o robô atrapalhar
-              const telLimpo = remoteJid.replace(/[^0-9]/g, "");
-              ativarPausaAtendimentoHumano(
-                remoteJid,
-                "Conversa ativa com atendente humano",
-                msg.pushName,
-                telLimpo
-              );
-              console.log(`[ROBÔ SILENCIADO] Atendimento humano em andamento com ${remoteJid}. Robô permaneceu em silêncio.`);
-              continue;
-            }
+          const telLimpo = remoteJid.replace(/[^0-9]/g, "");
+          const nomeCliente = msg.pushName || (msg as any)?.verifiedBizName || "Cliente";
+          let emAtendimentoHumano = verificarAtendimentoHumanoAtivo(remoteJid);
+
+          // 3. SE O CLIENTE ENVIAR SAUDAÇÃO OU COMANDO DE REATIVAÇÃO, REATIVA O ROBÔ IMEDIATAMENTE
+          if (emAtendimentoHumano && ehComandoReativarBot(textoCliente)) {
+            removerPausaAtendimentoHumano(remoteJid);
+            emAtendimentoHumano = false;
+            console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando/saudação ('${textoCliente}')!`);
           }
 
-          // 4. Ignorar mensagens antigas de sincronização de histórico (> 90 segundos)
-          const timestampMsg = Number(msg.messageTimestamp) * 1000;
-          if (timestampMsg && Date.now() - timestampMsg > 90000) {
+          // SEMPRE REGISTRAR A ATIVIDADE NO BANCO DE CONVERSAS (visibilidade instantânea no painel 'Conversas & IA')
+          const previewMsg = textoCliente || (msg.message?.audioMessage ? "🎙️ Áudio" : (msg.message?.imageMessage ? "📷 Imagem" : (msg.message?.videoMessage ? "🎥 Vídeo" : "Mensagem")));
+          registrarAtividadeConversa(remoteJid, {
+            numero: telLimpo,
+            nome: nomeCliente,
+            ultimaMensagem: previewMsg,
+            ultimoRemetente: "CLIENTE",
+            status: emAtendimentoHumano ? "HUMANO" : "IA"
+          });
+
+          // VERIFICAÇÃO DE PAUSA GLOBAL DO ROBÔ (Pausado no painel)
+          if (isRoboPausado()) {
+            console.log(`[ROBÔ PAUSADO GLOBALMENTE] Mensagem de ${remoteJid} registrada no painel, mas não respondida (pausa ativa): '${textoCliente}'`);
+            continue;
+          }
+
+          // Se continuar em atendimento humano ativo (e cliente não enviou comando de reativação)
+          if (emAtendimentoHumano) {
+            ativarPausaAtendimentoHumano(
+              remoteJid,
+              "Conversa ativa com atendente humano",
+              nomeCliente,
+              telLimpo
+            );
+            console.log(`[ROBÔ SILENCIADO] Atendimento humano em andamento com ${remoteJid}. Mensagem registrada no painel.`);
             continue;
           }
 
@@ -2150,7 +2164,13 @@ async function processarMensagemRobo(
     "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", "menu", "início", "inicio", 
     "voltar", "comecar", "começar", "#menu", "#bot"
   ];
-  if (saudacoesPuras.includes(texto)) {
+  const textoLimpo = (texto || "").replace(/[!?,.;:\-_]/g, " ").replace(/\s+/g, " ").trim();
+  const ehSaudacaoPura = 
+    saudacoesPuras.includes(texto) || 
+    saudacoesPuras.includes(textoLimpo) || 
+    /^(oi|ola|olá|oie|opa|salve|fala|bom dia|boa tarde|boa noite)\b/.test(textoLimpo);
+
+  if (ehSaudacaoPura) {
     const fallbackBoasVindas = `Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️\n\nComo posso te ajudar hoje?`;
     const resposta = preencherTemplate("msg_boas_vindas", fallbackBoasVindas);
     await enviarRespostaHumanizada(resposta);

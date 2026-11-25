@@ -267,6 +267,11 @@ function initSchema(db: DatabaseSync) {
   try { db.exec(`ALTER TABLE bot_mensagens ADD COLUMN ordem INTEGER DEFAULT 0;`); } catch (e) {}
   try { db.exec(`ALTER TABLE bot_mensagens ADD COLUMN gatilho TEXT;`); } catch (e) {}
 
+  // Garante que o robô não inicialize travado em pausa se a licença estiver ativa
+  try {
+    db.exec(`UPDATE configuracoes SET robo_pausado = 0 WHERE id = 'default' AND (licenca_status IS NULL OR licenca_status != 'BLOQUEADO');`);
+  } catch (e) {}
+
   // Criação de Índices de Ultra Performance (Consultas sub-milissegundo com 0% uso de CPU)
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_mensalistas_whatsapp ON mensalistas(whatsapp);

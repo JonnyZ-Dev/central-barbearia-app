@@ -404,6 +404,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    checarAtualizacoes(true);
+  }, []);
+
+  useEffect(() => {
     if (activeTab === "config") {
       checarAtualizacoes(true);
     }
@@ -1564,6 +1568,29 @@ export default function Dashboard() {
               Abrir Booksy da GM <ExternalLink className="w-3 h-3 flex-shrink-0" />
             </a>
           </div>
+
+          {/* Alerta de Atualização Pendente no GitHub */}
+          {statusAtualizacao?.temAtualizacao && (
+            <div className="bg-amber-950/40 p-3 rounded-2xl border border-amber-500/40 text-xs space-y-2 animate-pulse">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Nova Atualização!
+                </span>
+                <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold">
+                  {statusAtualizacao.commitsAtras} melhorias
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={aplicarAtualizacao}
+                disabled={aplicandoAtualizacao}
+                className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${aplicandoAtualizacao ? "animate-spin" : ""}`} />
+                {aplicandoAtualizacao ? "Atualizando..." : "Atualizar Sistema"}
+              </button>
+            </div>
+          )}
 
           {/* Badge de Licença Oficial Ativa */}
           <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-xs flex items-center justify-between">
