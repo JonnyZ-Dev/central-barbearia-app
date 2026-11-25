@@ -110,14 +110,23 @@ export async function gerarRespostaGemini(
     ];
 
     // Chamada à API oficial do Google Gemini (com suporte aos modelos mais recentes e fallback automático)
-    const modelosTentativa = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-1.5-flash"];
+    const modelosTentativa = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"];
     let respostaTexto: string | null = null;
 
     for (const modelo of modelosTentativa) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 4500); // Timeout rápido de 4.5 segundos para não atrasar o WhatsApp
+        const timeout = setTimeout(() => controller.abort(), 5000); // Timeout rápido de 5s para não atrasar o WhatsApp
+
+        const genConfig: any = {
+          temperature: 0.7,
+          maxOutputTokens: 1000,
+          topP: 0.85
+        };
+        if (modelo === "gemini-3.6-flash" || modelo === "gemini-3.5-flash") {
+          genConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
 
         const response = await fetch(url, {
           method: "POST",
@@ -127,14 +136,7 @@ export async function gerarRespostaGemini(
               parts: [{ text: systemInstruction }]
             },
             contents: contentsPayload,
-            generationConfig: {
-              temperature: 0.7,
-              maxOutputTokens: 1000,
-              topP: 0.85,
-              thinkingConfig: {
-                thinkingBudget: 0
-              }
-            }
+            generationConfig: genConfig
           }),
           signal: controller.signal
         });
@@ -184,28 +186,25 @@ export async function gerarRespostaGemini(
 // Helper para validar a chave de API na tela de configurações
 export async function testarChaveGemini(apiKey: string): Promise<{ success: boolean; erro?: string; modelo?: string }> {
   try {
-    if (!apiKey || apiKey.trim().length < 15) {
+    const keyLimpa = (apiKey || "").trim().replace(/[\r\n\t]/g, "");
+    if (!keyLimpa || keyLimpa.length < 15) {
       return { success: false, erro: "Chave de API inválida ou muito curta." };
     }
 
-    const modelos = ["gemini-3.5-flash", "gemini-3.6-flash", "gemini-3.8-flash", "gemini-1.5-flash"];
+    const modelos = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"];
     let ultimoErro = "";
 
     for (const modelo of modelos) {
       try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey.trim()}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${keyLimpa}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 6000);
+        const timeout = setTimeout(() => controller.abort(), 12000);
 
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }],
-            generationConfig: {
-              maxOutputTokens: 50,
-              thinkingConfig: { thinkingBudget: 0 }
-            }
+            contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }]
           }),
           signal: controller.signal
         });
@@ -215,10 +214,12 @@ export async function testarChaveGemini(apiKey: string): Promise<{ success: bool
         if (response.ok) {
           return { success: true, modelo };
         } else {
-          ultimoErro = `Google recusou com status ${response.status} no modelo ${modelo}`;
+          const errData = await response.json().catch(() => null);
+          const msgDetalhada = errData?.error?.message || `Status ${response.status}`;
+          ultimoErro = `Google (${modelo}): ${msgDetalhada}`;
         }
       } catch (err: any) {
-        ultimoErro = `Falha de conexão: ${err.message}`;
+        ultimoErro = `Falha de conexão com ${modelo}: ${err.message}`;
       }
     }
 
