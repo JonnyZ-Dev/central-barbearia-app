@@ -1205,7 +1205,8 @@ export async function desconectarBot() {
       sock.ev?.removeAllListeners("messages.upsert");
       sock.ev?.removeAllListeners("connection.update");
       sock.ev?.removeAllListeners("creds.update");
-      await sock.logout();
+      await sock.logout().catch(() => {});
+      sock.end?.();
     } catch (e) {}
     sock = null;
   }
@@ -1214,9 +1215,23 @@ export async function desconectarBot() {
   connectionStatus = "DESCONECTADO";
   currentQr = null;
   connectedNumber = null;
-  if (fs.existsSync(AUTH_DIR)) {
-    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+
+  try {
+    if (fs.existsSync(AUTH_DIR)) {
+      const arquivos = fs.readdirSync(AUTH_DIR);
+      for (const arq of arquivos) {
+        try {
+          fs.unlinkSync(path.join(AUTH_DIR, arq));
+        } catch (e) {}
+      }
+      try {
+        fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+      } catch (e) {}
+    }
+  } catch (e) {
+    console.warn("[BOT] Aviso ao limpar auth_dir:", (e as any)?.message);
   }
+
   return { success: true };
 }
 
