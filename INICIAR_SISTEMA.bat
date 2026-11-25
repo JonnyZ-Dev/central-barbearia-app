@@ -9,18 +9,17 @@ echo.
 
 cd /d "%~dp0"
 
-:: 1. Detectar Node.js
+:: 1. Detectar Node.js e Git com caminhos absolutos prioritarios
+set "PATH=C:\Program Files\Git\cmd;C:\Program Files\nodejs;%PATH%"
 set "NODE_CMD=node"
-if exist "C:\Program Files\nodejs\node.exe" (
-    set "NODE_CMD=C:\Program Files\nodejs\node.exe"
-    set "PATH=C:\Program Files\Git\cmd;C:\Program Files\nodejs;%PATH%"
-) else (
-    set "PATH=C:\Program Files\Git\cmd;C:\Program Files\nodejs;%PATH%"
-)
+if exist "C:\Program Files\nodejs\node.exe" set "NODE_CMD=C:\Program Files\nodejs\node.exe"
 
-:: 2. Verificar atualizacoes silenciosamente (se tiver Git e Internet)
+:: 2. Verificar se o Git esta disponivel para buscar melhorias do GitHub
 where git >nul 2>&1
-if %ERRORLEVEL% NEQ 0 goto verificar_servidor
+if %ERRORLEVEL% NEQ 0 (
+    echo [!] Git nao detectado no PATH. Iniciando com versao instalada localmente...
+    goto verificar_servidor
+)
 
 echo [*] Verificando atualizacoes no GitHub...
 if not exist ".git" (
@@ -55,32 +54,26 @@ if "%COMMITS_PENDENTES%"=="0" goto verificar_servidor
 if "%COMMITS_PENDENTES%"=="" goto verificar_servidor
 
 echo.
-echo [+] Atualizando sistema do GitHub: %COMMITS_PENDENTES% novas melhorias...
+echo [+] Atualizando sistema do GitHub: %COMMITS_PENDENTES% novas melhorias encontradas!
 for /f "tokens=5" %%p in ('netstat -aon ^| findstr :3000 ^| findstr LISTENING') do taskkill /F /PID %%p >nul 2>&1
 
-:: Cria script temporario desacoplado para compilar sem corrupcao de byte-offset no cmd.exe
-> "%~dp0_executar_update.bat" echo @echo off
->> "%~dp0_executar_update.bat" echo title Atualizando Sistema...
->> "%~dp0_executar_update.bat" echo cd /d "%~dp0"
->> "%~dp0_executar_update.bat" echo git reset --hard origin/main
->> "%~dp0_executar_update.bat" echo call "%NODE_CMD%" node_modules\next\dist\bin\next build
->> "%~dp0_executar_update.bat" echo start "" "%~f0"
->> "%~dp0_executar_update.bat" echo start /b "" cmd /c "timeout /t 2 /nobreak >nul & del /f /q \"%~dp0_executar_update.bat\""
->> "%~dp0_executar_update.bat" echo exit
-
-start "Atualizador" "%~dp0_executar_update.bat"
-exit /b
+echo [*] Baixando arquivos atualizados...
+git reset --hard origin/main
+echo [*] Compilando nova versao otimizada (aguarde alguns segundos)...
+call "%NODE_CMD%" node_modules\next\dist\bin\next build
+echo [OK] Atualizacao concluida com sucesso!
+echo.
 
 :verificar_servidor
 :: 3. Verificar se o servidor ja esta rodando na porta 3000 (ouvindo conexoes)
 netstat -ano | findstr :3000 | findstr LISTENING >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
-    echo [OK] O servidor ja esta em execucao!
+    echo [OK] O servidor ja esta em execucao na porta 3000!
     goto abrir_aplicativo
 )
 
-echo [*] Iniciando servidor de producao local...
-start "Barbearia_Server" /min "%NODE_CMD%" node_modules\next\dist\bin\next start -p 3000 -H 0.0.0.0
+echo [*] Iniciando servidor local na porta 3000...
+start "Barbearia_Server" "%NODE_CMD%" node_modules\next\dist\bin\next start -p 3000 -H 0.0.0.0
 echo [*] Aguardando servidor carregar na memoria...
 
 set WAIT_COUNT=0
@@ -89,7 +82,11 @@ set /a WAIT_COUNT+=1
 ping 127.0.0.1 -n 2 >nul
 netstat -ano | findstr :3000 | findstr LISTENING >nul 2>&1
 if %ERRORLEVEL% EQU 0 goto servidor_pronto
-if %WAIT_COUNT% LSS 20 goto loop_esperar_porta
+if %WAIT_COUNT% LSS 25 goto loop_esperar_porta
+
+echo.
+echo [AVISO] O servidor esta demorando para responder ou pode ter ocorrido um erro na inicializacao.
+echo Tentando abrir a tela do aplicativo mesmo assim...
 
 :servidor_pronto
 echo [OK] Servidor ativo e respondendo na porta 3000!
