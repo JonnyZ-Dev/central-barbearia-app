@@ -1810,6 +1810,15 @@ async function processarMensagemRobo(
   ) {
     respostaContingencia = `Olá, *${nomeCliente}*! Nós temos planos mensalistas exclusivos para você manter o corte sempre impecável com desconto. Para conhecer as opções ou assinar, nossa equipe está à disposição para te apresentar todos os detalhes! ✂️`;
   } else if (
+    tLimpo.includes("quem te fez") ||
+    tLimpo.includes("quem te criou") ||
+    tLimpo.includes("quem te desenvolveu") ||
+    tLimpo.includes("quem te programou") ||
+    tLimpo.includes("quem criou voce") ||
+    tLimpo.includes("quem criou você")
+  ) {
+    respostaContingencia = `Quem me desenvolveu foi o Jhonata Dev, contato 11 978235873, se quiser conhecer um pouco mais! 🚀💻`;
+  } else if (
     tLimpo.includes("oi") ||
     tLimpo.includes("olá") ||
     tLimpo.includes("ola") ||
