@@ -10,6 +10,7 @@ import makeWASocket, {
 import { NodeCache } from "@cacheable/node-cache";
 import { getDb } from "./db";
 import { gerarRespostaGemini, limparHistoricoChat } from "./gemini";
+import { iniciarAgendadorSincronizacaoBooksy } from "./booksy-sync";
 
 const AUTH_DIR = path.join(process.cwd(), "database", "auth_info_baileys");
 
@@ -711,6 +712,7 @@ export async function garantirBotIniciadoSeCredsExistem() {
 
 export async function iniciarWhatsAppBot() {
   setRoboPausado(false);
+  try { iniciarAgendadorSincronizacaoBooksy(); } catch (e) {}
   if (sock && connectionStatus === "CONECTADO") {
     return { status: connectionStatus, qr: currentQr, numero: connectedNumber, pausado: isRoboPausado() };
   }
@@ -803,6 +805,9 @@ export async function iniciarWhatsAppBot() {
             processarAvisosRenovacaoAutomatica().catch(() => {});
           }, 2 * 60 * 60 * 1000);
         }
+
+        // Iniciar sincronização automática diária com o Booksy
+        try { iniciarAgendadorSincronizacaoBooksy(); } catch (e) {}
       }
     });
 

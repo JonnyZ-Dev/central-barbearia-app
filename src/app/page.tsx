@@ -88,6 +88,7 @@ export default function Dashboard() {
   const [modalEditarPlano, setModalEditarPlano] = useState<any | null>(null);
   const [modalNovoServico, setModalNovoServico] = useState(false);
   const [modalEditarServico, setModalEditarServico] = useState<any | null>(null);
+  const [sincronizandoBooksy, setSincronizandoBooksy] = useState(false);
   const [modalNovoBarbeiro, setModalNovoBarbeiro] = useState(false);
   const [modalEditarBarbeiro, setModalEditarBarbeiro] = useState<any | null>(null);
   const [modalHistorico, setModalHistorico] = useState<any | null>(null);
@@ -990,6 +991,25 @@ export default function Dashboard() {
       }
     } catch (e) {
       mostrarFeedback("Erro ao excluir", "error");
+    }
+  };
+
+  // Sincronização Automática com o Booksy
+  const handleSincronizarBooksy = async () => {
+    setSincronizandoBooksy(true);
+    try {
+      const res = await fetch("/api/booksy/sync", { method: "POST" });
+      const json = await res.json();
+      if (json.success) {
+        mostrarFeedback(`Booksy sincronizado! ${json.atualizados} preços atualizados, ${json.inseridos} novos combos adicionados.`);
+        carregarDados();
+      } else {
+        mostrarFeedback(json.erro || "Falha ao sincronizar com o Booksy", "error");
+      }
+    } catch (e: any) {
+      mostrarFeedback("Erro ao conectar com o Booksy: " + e.message, "error");
+    } finally {
+      setSincronizandoBooksy(false);
     }
   };
 
@@ -2083,22 +2103,34 @@ export default function Dashboard() {
                   </p>
                 </div>
 
-                <button 
-                  onClick={() => {
-                    setFormServico({
-                      id: "",
-                      nome: "",
-                      categoria: "Cabelo",
-                      preco: "",
-                      duracao_minutos: 30,
-                      descricao: ""
-                    });
-                    setModalNovoServico(true);
-                  }}
-                  className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition shadow-lg shadow-amber-500/10"
-                >
-                  <Plus className="w-4 h-4" /> Novo Serviço
-                </button>
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <button
+                    onClick={handleSincronizarBooksy}
+                    disabled={sincronizandoBooksy}
+                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition active:scale-95 shadow-sm"
+                    title="Buscar e sincronizar preços atualizados diretamente da página oficial do Booksy"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${sincronizandoBooksy ? "animate-spin text-amber-400" : "text-amber-400"}`} />
+                    {sincronizandoBooksy ? "Sincronizando Booksy..." : "Sincronizar com Booksy"}
+                  </button>
+
+                  <button 
+                    onClick={() => {
+                      setFormServico({
+                        id: "",
+                        nome: "",
+                        categoria: "Cabelo",
+                        preco: "",
+                        duracao_minutos: 30,
+                        descricao: ""
+                      });
+                      setModalNovoServico(true);
+                    }}
+                    className="bg-amber-500 hover:bg-amber-400 text-black px-4 py-2 rounded-xl font-bold text-sm flex items-center gap-2 transition shadow-lg shadow-amber-500/10 active:scale-95"
+                  >
+                    <Plus className="w-4 h-4" /> Novo Serviço
+                  </button>
+                </div>
               </div>
 
               {/* Filtros de Categoria e Busca Rápida */}

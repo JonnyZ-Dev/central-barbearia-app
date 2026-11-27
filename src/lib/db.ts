@@ -719,7 +719,7 @@ export function popularDadosIniciaisGM(db: DatabaseSync) {
       'https://maps.google.com',
       -23.550520,
       -46.633308,
-      'https://booksy.com',
+      'https://booksy.com/pt-br/264722_gmbarbershop_barbearias_1047773_sao-paulo',
       '11960129564',
       '(11) 96012-9564',
       'Fala guerreiro! Seja muito bem-vindo à GM Barbershop 💈 Como podemos te ajudar hoje?',
@@ -732,35 +732,52 @@ export function popularDadosIniciaisGM(db: DatabaseSync) {
   stmtB.run('barbeiro-gabriel', 'Gabriel (Proprietário)', '(11) 96012-9564', 'gabriel@gmbarbershop.com', 'ADMIN');
   stmtB.run('barbeiro-erick', 'Erick', '(11) 97848-5542', 'erick@gmbarbershop.com', 'BARBEIRO');
 
-  // Serviços Reais Catalogados da GM Barbershop
+  // Serviços Reais Catalogados da GM Barbershop (Sincronizados com o Booksy)
   const servicosGM = [
     ['serv-corte', 'Corte', 'Cabelo', 40.00, 0, 50, 'Corte tradicional ou degradê completo com acabamento.'],
-    ['serv-penteado', 'Penteado', 'Cabelo', 15.00, 0, 15, 'Finalização e penteado com produtos premium.'],
-    ['serv-progressiva', 'Progressiva', 'Cabelo', 60.00, 1, 50, 'Alinhamento térmico capilar de alta durabilidade.'],
-    ['serv-botox-capilar', 'Botox Capilar', 'Cabelo', 40.00, 0, 50, 'Reconstrução e redução de frizz capilar.'],
-    ['serv-relaxamento', 'Relaxamento com hidratação', 'Cabelo', 30.00, 0, 30, 'Relaxamento dos fios com hidratação profunda.'],
-    ['serv-corte-blindado', 'Corte Blindado', 'Cabelo', 45.00, 0, 50, 'Técnica blindada com fixação ultra resistente.'],
-    ['serv-corte-blindado-colorido', 'Corte Blindado Colorido', 'Cabelo', 55.00, 0, 50, 'Corte blindado com pigmentação artística.'],
-    ['serv-luzes', 'Luzes', 'Cabelo', 70.00, 0, 50, 'Mechas e reflexos claros com descoloração controlada.'],
-    ['serv-coloracao', 'Coloração', 'Cabelo', 20.00, 0, 30, 'Aplicação de tintura ou tonalizante uniforme.'],
+    ['serv-penteado', 'Penteado', 'Cabelo', 20.00, 0, 15, 'Finalização e penteado com produtos premium.'],
+    ['serv-progressiva', 'Progressiva', 'Cabelo', 70.00, 1, 50, 'Alinhamento térmico capilar de alta durabilidade.'],
+    ['serv-botox-capilar', 'Botox Capilar', 'Cabelo', 50.00, 0, 50, 'Reconstrução e redução de frizz capilar.'],
+    ['serv-relaxamento', 'Relaxamento com hidratação', 'Cabelo', 35.00, 0, 30, 'Relaxamento dos fios com hidratação profunda.'],
+    ['serv-corte-blindado', 'Corte Blindado', 'Cabelo', 50.00, 0, 50, 'Técnica blindada com fixação ultra resistente.'],
+    ['serv-corte-blindado-colorido', 'Corte Blindado Colorido', 'Cabelo', 60.00, 0, 50, 'Corte blindado com pigmentação artística.'],
+    ['serv-luzes', 'Luzes', 'Cabelo', 90.00, 0, 50, 'Mechas e reflexos claros com descoloração controlada.'],
+    ['serv-coloracao', 'Coloração', 'Cabelo', 30.00, 0, 30, 'Aplicação de tintura ou tonalizante uniforme.'],
     ['serv-hidratacao', 'Hidratação Capilar', 'Cabelo', 15.00, 0, 15, 'Nutrição e brilho com máscara reparadora.'],
-    ['serv-selagem', 'Selagem Capilar', 'Cabelo', 50.00, 1, 50, 'Fechamento de cutículas e brilho espelhado.'],
+    ['serv-selagem', 'Selagem Capilar', 'Cabelo', 60.00, 1, 50, 'Fechamento de cutículas e brilho espelhado.'],
+    ['serv-freestyle', 'Freestyle', 'Cabelo', 15.00, 0, 30, 'Desenho artístico capilar com navalha.'],
     ['serv-sobrancelha', 'Sobrancelha', 'Cabelo', 10.00, 0, 5, 'Alinhamento e acabamento na navalha.'],
-    ['serv-platinado', 'Platinado', 'Cabelo', 160.00, 0, 50, 'Descoloração global efeito platinado / nevou.'],
+    ['serv-platinado', 'Platinado', 'Cabelo', 120.00, 0, 50, 'Descoloração global efeito platinado / nevou.'],
     ['serv-barba', 'Barba', 'Barba', 30.00, 0, 40, 'Desenho e alinhamento completo da barba na navalha.'],
     ['serv-barba-hidratacao', 'Barba com Hidratação', 'Barba', 40.00, 0, 40, 'Barba completa + toalha quente e óleos nutritivos.'],
-    ['serv-combo-corte-barba', 'Corte e Barba', 'Combos', 70.00, 0, 90, 'Combo tradicional corte + barba alinhada.'],
-    ['serv-combo-corte-barba-sobrancelha', 'Corte, Barba e Sobrancelha', 'Combos', 75.00, 0, 90, 'Experiência completa de visual.'],
-    ['serv-combo-corte-barba-prog-sob', 'Corte, Barba, Progressiva e Sobrancelha', 'Combos', 135.00, 0, 130, 'Combo premium completo com química e barba.'],
-    ['serv-combo-corte-barba-botox-sob', 'Corte, Barba, Botox e Sobrancelha', 'Combos', 115.00, 0, 130, 'Alinhamento dos fios, barba e sobrancelha.'],
-    ['serv-combo-corte-sobrancelha', 'Corte e Sobrancelha', 'Combos', 45.00, 0, 50, 'Corte completo com limpeza da sobrancelha.'],
-    ['serv-combo-corte-relax-sob', 'Corte, Relaxamento e Sobrancelha', 'Combos', 75.00, 0, 50, 'Corte com química de relaxamento.'],
-    ['serv-combo-corte-barba-hidr-sob', 'Corte + Barba hidratada + Sobrancelha', 'Combos', 85.00, 0, 90, 'Corte, hidratação de barba e sobrancelha.'],
-    ['serv-combo-corte-prog-barba', 'Corte + Progressiva + Barba', 'Combos', 130.00, 0, 150, 'Transformação completa de cabelo e barba.'],
-    ['serv-combo-corte-barba-luzes', 'Corte, Barba e Luzes', 'Combos', 140.00, 0, 150, 'Luzes no cabelo com corte e barba.'],
-    ['serv-combo-corte-botox-sob', 'Corte + Botox + Sobrancelha', 'Combos', 85.00, 1, 100, 'Corte com tratamento botox capilar.'],
-    ['serv-combo-corte-sob-bigode', 'Corte + Sobrancelha + Bigode', 'Combos', 50.00, 0, 50, 'Acabamento perfeito de cabelo e buço.'],
-    ['serv-combo-corte-prog-matizador', 'Corte, Progressiva e Matizador', 'Combos', 110.00, 0, 100, 'Progressiva com tonalização anti-amarelamento.'],
+    ['serv-combo-corte-barba', 'Corte e Barba', 'Combos', 75.00, 0, 90, 'Combo tradicional corte + barba alinhada.'],
+    ['serv-combo-corte-barba-sobrancelha', 'Corte, Barba e Sobrancelha', 'Combos', 80.00, 0, 90, 'Experiência completa de visual.'],
+    ['serv-combo-corte-barba-prog-sob', 'Corte, Barba, Progressiva e Sobrancelha', 'Combos', 150.00, 0, 130, 'Combo premium completo com química e barba.'],
+    ['serv-combo-corte-barba-botox-sob', 'Corte, Barba, Botox e Sobrancelha', 'Combos', 130.00, 0, 130, 'Alinhamento dos fios, barba e sobrancelha.'],
+    ['serv-combo-corte-sobrancelha', 'Corte e Sobrancelha', 'Combos', 50.00, 0, 50, 'Corte completo com limpeza da sobrancelha.'],
+    ['serv-corte-e-progressiva', 'Corte e Progressiva', 'Combos', 115.00, 0, 100, 'Corte completo com alinhamento progressivo.'],
+    ['serv-corte-e-selagem-capilar', 'Corte e Selagem Capilar', 'Combos', 105.00, 0, 100, 'Corte com selagem e brilho espelhado.'],
+    ['serv-corte-e-botox', 'Corte e Botox', 'Combos', 95.00, 0, 100, 'Corte com tratamento botox capilar.'],
+    ['serv-corte-barba-e-relaxamento', 'Corte, Barba e Relaxamento', 'Combos', 110.00, 0, 100, 'Corte, barba e relaxamento capilar.'],
+    ['serv-corte-e-coloracao', 'Corte e Coloração', 'Combos', 75.00, 0, 50, 'Corte com pigmentação / tonalizante.'],
+    ['serv-corte-e-platinado', 'Corte e Platinado', 'Combos', 165.00, 0, 100, 'Corte completo com efeito nevou platinado.'],
+    ['serv-corte-luzes', 'Corte+Luzes', 'Combos', 135.00, 0, 100, 'Corte com luzes e mechas claras.'],
+    ['serv-corte-e-hidratacao', 'Corte e Hidratação', 'Combos', 60.00, 0, 50, 'Corte com nutrição capilar profunda.'],
+    ['serv-corte-e-relaxamento', 'Corte e Relaxamento', 'Combos', 80.00, 0, 70, 'Corte com relaxamento capilar.'],
+    ['serv-corte-e-freestyle', 'Corte e Freestyle', 'Combos', 60.00, 0, 70, 'Corte com risco/desenho navalhado.'],
+    ['serv-corte-hidratacao-e-sobrancelha', 'Corte, Hidratação e Sobrancelha', 'Combos', 65.00, 0, 50, 'Corte com hidratação e sobrancelha.'],
+    ['serv-botox-penteado', 'Botox + Penteado', 'Combos', 70.00, 0, 50, 'Botox reconstrutor com finalização premium.'],
+    ['serv-progressiva-penteado', 'Progressiva + Penteado', 'Combos', 80.00, 0, 50, 'Progressiva térmica com penteado.'],
+    ['serv-barba-e-pezinho', 'Barba e pezinho', 'Combos', 40.00, 0, 40, 'Alinhamento de barba com acabamento do pezinho.'],
+    ['serv-barba-hidratada-pezinho', 'Barba Hidratada + Pezinho', 'Combos', 50.00, 0, 50, 'Barba com hidratação e pezinho alinhado.'],
+    ['serv-corte-barba-e-coloracao', 'Corte, Barba e Coloração', 'Combos', 105.00, 0, 90, 'Corte, barba alinhada e pigmentação capilar.'],
+    ['serv-combo-corte-relax-sob', 'Corte, Relaxamento e Sobrancelha', 'Combos', 80.00, 0, 50, 'Corte com química de relaxamento.'],
+    ['serv-combo-corte-barba-hidr-sob', 'Corte + Barba hidratada + Sobrancelha', 'Combos', 90.00, 0, 90, 'Corte, hidratação de barba e sobrancelha.'],
+    ['serv-combo-corte-prog-barba', 'Corte + Progressiva + Barba', 'Combos', 145.00, 0, 150, 'Transformação completa de cabelo e barba.'],
+    ['serv-combo-corte-barba-luzes', 'Corte, Barba e Luzes', 'Combos', 165.00, 0, 150, 'Luzes no cabelo com corte e barba.'],
+    ['serv-combo-corte-botox-sob', 'Corte + Botox + Sobrancelha', 'Combos', 100.00, 1, 100, 'Corte com tratamento botox capilar.'],
+    ['serv-combo-corte-sob-bigode', 'Corte + Sobrancelha + Bigode', 'Combos', 55.00, 0, 50, 'Acabamento perfeito de cabelo e buço.'],
+    ['serv-combo-corte-prog-matizador', 'Corte, Progressiva e Matizador', 'Combos', 125.00, 0, 100, 'Progressiva com tonalização anti-amarelamento.'],
     ['serv-depilacao-nariz', 'Depilação do nariz', 'Outros', 10.00, 0, 10, 'Limpeza higiênica rápida com cera própria.']
   ];
 
@@ -772,7 +789,7 @@ export function popularDadosIniciaisGM(db: DatabaseSync) {
   // Plano VIP Real da Barbearia
   const stmtP = db.prepare(`INSERT INTO planos (id, nome, preco_mensal, cortes_cabelo_inclusos, barbas_inclusas, inclui_sobrancelha, descricao, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`);
   stmtP.run('plano-corte-semanal-gm', 'Corte Semanal GM', 130.00, 4, 0, 0, '1 corte por semana (4 cortes no mês) + 10% de desconto em produtos');
-  stmtP.run('plano-vip-completo', 'VIP Completo (Cabelo & Barba)', 220.00, 4, 4, 1, 'Cortes e barbas semanais com sobrancelha inclusa');
+  stmtP.run('plano-vip-completo', 'VIP Completo (Cabelo & Barba)', 200.00, 4, 4, 1, 'Cortes e barbas semanais com sobrancelha inclusa');
   stmtP.run('plano-duplo-corte', 'Corte Quinzenal (2x no mês)', 75.00, 2, 0, 0, '2 cortes no mês');
 
   // Assinantes VIPs Iniciais Reais
