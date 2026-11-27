@@ -47,8 +47,14 @@ const lidToPhoneMap = new Map<string, string>();
 // Controle de mensagens enviadas pelo próprio robô (para diferenciar de mensagens enviadas por humanos no celular)
 const mensagensEnviadasPeloRobo = new Set<string>();
 
-// Cooldown anti-spam de alertas enviados para o WhatsApp dos barbeiros (5 minutos por cliente)
-const ultimosAlertasBarbeiro = new Map<string, number>();
+// Sistema Anti-Spam de Duas Pontas para Alertas de Barbeiros:
+// 1. Por cliente: mesmo número só pode disparar alerta a cada 5 minutos (evita trolls de 1 número)
+// 2. Por barbeiro: o profissional recebe no máximo 5 alertas por hora (proteção contra múltiplos chips)
+const ultimosAlertasPorCliente = new Map<string, number>();
+const ultimosAlertasPorBarbeiro = new Map<string, number[]>();
+const INTERVALO_COOLDOWN_CLIENTE_MS = 5 * 60 * 1000; // 5 minutos
+const MAX_ALERTAS_HORA_BARBEIRO = 5; // Máximo 5 alertas por hora por barbeiro
+const JANELA_HORA_BARBEIRO_MS = 60 * 60 * 1000; // 1 hora
 
 // Cache oficial para retries do Baileys persistente na RAM (sobrevive a reconexões do socket)
 const msgRetryCounterCache = new NodeCache({ stdTTL: 3600, useClones: false }) as any;
@@ -1632,12 +1638,12 @@ async function processarMensagemRobo(
 
   // =========================================================================
   // 3.8. SOLICITAÇÃO DE CONTATO COM UM BARBEIRO / ATENDIMENTO HUMANO
-  // Quando o cliente solicita falar com o Erick, Gabriel ou a equipe da casa:
-  // Dispara alerta real no WhatsApp do barbeiro, avisa o cliente com o Booksy
-  // e transfere o status para ATENDIMENTO HUMANO no painel da barbearia.
+  // Detecta pedidos de falar, recados, atrasos ou encaixes para qualquer barbeiro da casa
+  // Aplica proteção Anti-Spam de Duas Pontas (por cliente e por barbeiro)
+  // e NUNCA mente sobre quem foi ou não notificado!
   // =========================================================================
   const tLimpoMsg = texto.toLowerCase().trim();
-  const querFalarComBarbeiro = (
+  const querFalarOuAvisar = (
     tLimpoMsg.includes("falar com") ||
     tLimpoMsg.includes("falar c/") ||
     tLimpoMsg.includes("falar com o") ||
@@ -1649,78 +1655,160 @@ async function processarMensagemRobo(
     tLimpoMsg.includes("chama a") ||
     tLimpoMsg.includes("chamar a") ||
     tLimpoMsg.includes("conversar com") ||
+    tLimpoMsg.includes("avisa o") ||
+    tLimpoMsg.includes("avise o") ||
+    tLimpoMsg.includes("avisa a") ||
+    tLimpoMsg.includes("avise a") ||
+    tLimpoMsg.includes("avisa pro") ||
+    tLimpoMsg.includes("avisa pra") ||
+    tLimpoMsg.includes("avise pro") ||
+    tLimpoMsg.includes("avise pra") ||
     tLimpoMsg.includes("recado para") ||
+    tLimpoMsg.includes("recado pro") ||
+    tLimpoMsg.includes("recado pra") ||
+    tLimpoMsg.includes("fala pro") ||
+    tLimpoMsg.includes("fala para") ||
+    tLimpoMsg.includes("fale pro") ||
+    tLimpoMsg.includes("fale para") ||
+    tLimpoMsg.includes("diga pro") ||
+    tLimpoMsg.includes("diga para") ||
+    tLimpoMsg.includes("diga ao") ||
     tLimpoMsg.includes("duvida com") ||
     tLimpoMsg.includes("dúvida com") ||
     tLimpoMsg.includes("atendente") ||
     tLimpoMsg.includes("humano") ||
+    tLimpoMsg.includes("atrasado") ||
+    tLimpoMsg.includes("atraso") ||
+    tLimpoMsg.includes("vou atrasar") ||
+    tLimpoMsg.includes("chegar atrasado") ||
+    tLimpoMsg.includes("encaixe") ||
+    tLimpoMsg.includes("vaga com") ||
+    tLimpoMsg.includes("horario com") ||
+    tLimpoMsg.includes("horário com") ||
     tLimpoMsg === "/atender" ||
     tLimpoMsg === "atender" ||
     tLimpoMsg === "/humano"
   );
 
-  const barbeiroMencionado = 
-    (tLimpoMsg.includes("erick") || tLimpoMsg.includes("eric")) ? "Erick" :
-    (tLimpoMsg.includes("gabriel")) ? "Gabriel" :
-    (tLimpoMsg.includes("barbeiro") || tLimpoMsg.includes("atendente") || tLimpoMsg.includes("humano") || tLimpoMsg === "/atender" || tLimpoMsg === "atender") ? "Barbeiro" : null;
-
-  if (querFalarComBarbeiro && barbeiroMencionado) {
+  if (querFalarOuAvisar) {
     const db = getDb();
-    let barbeiroRow: any = null;
+    const barbeirosAtivos: any[] = db.prepare("SELECT * FROM barbeiros WHERE ativo = 1").all() || [];
 
-    if (barbeiroMencionado === "Erick") {
-      barbeiroRow = db.prepare("SELECT * FROM barbeiros WHERE nome LIKE '%Erick%' AND ativo = 1 LIMIT 1").get();
-    } else if (barbeiroMencionado === "Gabriel") {
-      barbeiroRow = db.prepare("SELECT * FROM barbeiros WHERE nome LIKE '%Gabriel%' AND ativo = 1 LIMIT 1").get();
-    } else {
-      barbeiroRow = db.prepare("SELECT * FROM barbeiros WHERE ativo = 1 ORDER BY id ASC LIMIT 1").get();
+    // Tenta encontrar qual barbeiro da casa o cliente mencionou
+    let barbeiroAlvo = barbeirosAtivos.find(b => {
+      const nomes = b.nome.toLowerCase().split(/\s+/).filter((p: string) => p.length >= 3);
+      return nomes.some((parte: string) => tLimpoMsg.includes(parte));
+    });
+
+    // Se o cliente pediu alguém específico que NÃO existe na equipe oficial da barbearia
+    if (!barbeiroAlvo) {
+      const matchPessoa = tLimpoMsg.match(/(?:avisa(?:r)?|avise|falar com|conversar com|chama(?:r)?|recado para|recado pro|fala pro|fale pro|diga pro|diga para)\s+(?:o|a)?\s*([a-zá-ú]+(?:\s+[a-zá-ú]+)?)/i);
+      const palavrasGenericas = ["barbeiro", "atendente", "humano", "alguem", "alguém", "recepcao", "recepção", "equipe", "salão", "salao"];
+      
+      if (matchPessoa && !palavrasGenericas.includes(matchPessoa[1].toLowerCase().trim())) {
+        const nomeMencionado = matchPessoa[1].trim();
+        const listaOficial = barbeirosAtivos.map(b => b.nome.split(" ")[0]).join(" e ");
+        
+        const respostaBarbeiroInexistente = `Olá, *${nomeCliente}*! O profissional *${nomeMencionado.charAt(0).toUpperCase() + nomeMencionado.slice(1)}* não faz parte da equipe da *${barbearia}*. 💈\n\nNossos barbeiros oficiais da casa são: *${listaOficial || "nossa equipe"}*.\n\nGostaria que eu deixasse um recado para algum deles? Caso queira conferir horários disponíveis, acesse nosso Booksy:\n👉 *${linkBooksy}*`;
+        
+        await enviarRespostaHumanizada(respostaBarbeiroInexistente);
+        return;
+      }
+
+      // Se for pedido genérico (ex: "falar com um barbeiro", "/atender", "atraso"): direciona para o primeiro barbeiro
+      barbeiroAlvo = barbeirosAtivos[0];
     }
 
-    const nomeBarbeiroExibicao = barbeiroRow ? barbeiroRow.nome.split(" ")[0] : barbeiroMencionado;
+    if (barbeiroAlvo) {
+      const agora = Date.now();
+      const nomeBarbeiroExibicao = barbeiroAlvo.nome.split(" ")[0];
 
-    // Dispara alerta real no WhatsApp do profissional (com cooldown anti-spam de 5 minutos)
-    if (barbeiroRow?.telefone_whatsapp) {
-      let numBarbeiro = String(barbeiroRow.telefone_whatsapp).replace(/\D/g, "");
+      // -----------------------------------------------------------------------
+      // 1. CAMADA ANTI-SPAM POR CLIENTE (O mesmo número não spamma ninguém por 5 min)
+      // -----------------------------------------------------------------------
+      const ultimoAlertaCliente = ultimosAlertasPorCliente.get(remoteJid) || 0;
+      const clienteEmCooldown = (agora - ultimoAlertaCliente) < INTERVALO_COOLDOWN_CLIENTE_MS;
+
+      if (clienteEmCooldown) {
+        console.log(`[ANTI-SPAM CLIENTE] Bloqueado alerta duplicado de ${remoteJid} (cooldown de 5 min ativo).`);
+        
+        // ELAINE NÃO MENTE: Explica que o recado anterior já foi entregue e pede para aguardar
+        const respostaCooldown = `Você já enviou um recado para a nossa equipe há poucos instantes e eles já foram avisados! 🔔\n\nComo nossos barbeiros atendem com hora marcada e podem estar ocupados na cadeira com cliente, peço só uma pequena pausa que assim que ele liberar ele te responde por aqui!\n\nSe preferir adiantar ou alterar seu agendamento sem fila:\n👉 *${linkBooksy}* 💈`;
+        
+        await enviarRespostaHumanizada(respostaCooldown);
+        return;
+      }
+
+      // -----------------------------------------------------------------------
+      // 2. CAMADA ANTI-SPAM POR BARBEIRO (Máximo 5 alertas por hora no WhatsApp dele)
+      // -----------------------------------------------------------------------
+      let numBarbeiro = String(barbeiroAlvo.telefone_whatsapp || "").replace(/\D/g, "");
       if (numBarbeiro.length <= 11 && !numBarbeiro.startsWith("55")) {
         numBarbeiro = "55" + numBarbeiro;
       }
-      const barbeiroJid = numBarbeiro + "@s.whatsapp.net";
+      const barbeiroJid = numBarbeiro ? `${numBarbeiro}@s.whatsapp.net` : null;
 
-      if (barbeiroJid !== remoteJid) {
-        const agora = Date.now();
-        const chaveCooldown = `${barbeiroJid}:${remoteJid}`;
-        const ultimoEnvio = ultimosAlertasBarbeiro.get(chaveCooldown) || 0;
-
-        if (agora - ultimoEnvio > 300000) { // 5 minutos de intervalo
-          ultimosAlertasBarbeiro.set(chaveCooldown, agora);
-          const msgAlertaBarbeiro = `🔔 *ALERTA DE CLIENTE - ${barbearia.toUpperCase()}* 💈\n\nOlá, *${barbeiroRow.nome}*! O cliente *${nomeCliente}* está no WhatsApp da barbearia solicitando falar com você.\n\n📱 *WhatsApp do Cliente:* https://wa.me/${telefoneRealCliente}\n💬 *Mensagem do cliente:* "${texto}"\n\n_Você pode responder o cliente diretamente no WhatsApp ou pelo Painel da Barbearia!_`;
+      if (barbeiroJid) {
+        const historicoBarbeiro = (ultimosAlertasPorBarbeiro.get(barbeiroJid) || []).filter(t => agora - t < JANELA_HORA_BARBEIRO_MS);
+        
+        if (historicoBarbeiro.length >= MAX_ALERTAS_HORA_BARBEIRO) {
+          console.log(`[ANTI-SPAM BARBEIRO] Limite de 5 alertas/hora atingido para ${barbeiroAlvo.nome} (${barbeiroJid}).`);
           
-          try {
-            await enviarMensagemDoBot(barbeiroJid, { text: msgAlertaBarbeiro });
-            console.log(`[ALERTA BARBEIRO] Mensagem de alerta enviada com sucesso para ${barbeiroRow.nome} (${barbeiroJid})`);
-          } catch (errAlerta) {
-            console.error(`[ALERTA BARBEIRO] Falha ao enviar alerta para ${barbeiroJid}:`, errAlerta);
-          }
+          ativarPausaAtendimentoHumano(remoteJid, `Cliente deixou recado para ${nomeBarbeiroExibicao} (limite horário atingido)`, nomeCliente, telefoneRealCliente);
+          
+          const respostaLimiteBarbeiro = `O *${nomeBarbeiroExibicao}* está com muitos atendimentos no momento! 💈\n\nJá registrei seu recado no nosso painel de atendimento para ele visualizar assim que liberar da cadeira. Para consultar horários disponíveis e agendar sem fila:\n👉 *${linkBooksy}*`;
+          
+          await enviarRespostaHumanizada(respostaLimiteBarbeiro);
+          return;
         }
       }
+
+      // -----------------------------------------------------------------------
+      // 3. ENVIO REAL DO ALERTA NO WHATSAPP DO PROFISSIONAL
+      // -----------------------------------------------------------------------
+      let alertaEnviadoComSucesso = false;
+
+      if (barbeiroJid && barbeiroJid !== remoteJid) {
+        const msgAlertaBarbeiro = `🔔 *ALERTA DE CLIENTE - ${barbearia.toUpperCase()}* 💈\n\nOlá, *${barbeiroAlvo.nome}*! O cliente *${nomeCliente}* está no WhatsApp da barbearia solicitando falar com você.\n\n📱 *WhatsApp do Cliente:* https://wa.me/${telefoneRealCliente}\n💬 *Mensagem do cliente:* "${texto}"\n\n_Você pode responder o cliente diretamente no WhatsApp ou pelo Painel da Barbearia!_`;
+
+        try {
+          await enviarMensagemDoBot(barbeiroJid, { text: msgAlertaBarbeiro });
+          console.log(`[ALERTA BARBEIRO] Mensagem de alerta enviada com sucesso para ${barbeiroAlvo.nome} (${barbeiroJid})`);
+          alertaEnviadoComSucesso = true;
+
+          // Atualiza registros de anti-spam em ambas as pontas
+          ultimosAlertasPorCliente.set(remoteJid, agora);
+          const historicoAtualizado = [...(ultimosAlertasPorBarbeiro.get(barbeiroJid) || []).filter(t => agora - t < JANELA_HORA_BARBEIRO_MS), agora];
+          ultimosAlertasPorBarbeiro.set(barbeiroJid, historicoAtualizado);
+        } catch (errAlerta) {
+          console.error(`[ALERTA BARBEIRO] Falha ao enviar alerta para ${barbeiroJid}:`, errAlerta);
+        }
+      }
+
+      // Ativa atendimento humano no painel da barbearia
+      ativarPausaAtendimentoHumano(remoteJid, `Cliente solicitou falar com ${nomeBarbeiroExibicao}`, nomeCliente, telefoneRealCliente);
+
+      // -----------------------------------------------------------------------
+      // 4. RESPOSTA DA ELAINE.IA 100% CONDICIONADA À VERDADE
+      // -----------------------------------------------------------------------
+      let respostaAlertaCliente = "";
+      if (alertaEnviadoComSucesso) {
+        respostaAlertaCliente = `Vou encaminhar um alerta para o *${nomeBarbeiroExibicao}* agora mesmo! 🔔\n\nProntinho, acabei de enviar a notificação no WhatsApp particular dele! Assim que ele finalizar o atendimento da vez, ele te responderá por aqui. Se quiser adiantar o agendamento enquanto ele responde, você pode fazer diretamente pelo nosso Booksy:\n👉 *${linkBooksy}* 💈`;
+      } else {
+        respostaAlertaCliente = `Já registrei seu recado para o *${nomeBarbeiroExibicao}* diretamente no nosso painel de atendimento! 🔔\n\nEle já foi sinalizado e te responderá assim que liberar da cadeira. Se quiser consultar horários ou agendar sem fila:\n👉 *${linkBooksy}* 💈`;
+      }
+
+      await enviarRespostaHumanizada(respostaAlertaCliente);
+      registrarAtividadeConversa(remoteJid, {
+        numero: telefoneRealCliente,
+        nome: nomeCliente,
+        ultimaMensagem: respostaAlertaCliente,
+        ultimoRemetente: "IA",
+        status: "HUMANO",
+        motivoPausa: `Alerta enviado para ${nomeBarbeiroExibicao}`
+      });
+      return;
     }
-
-    // Ativa atendimento humano no painel da barbearia
-    ativarPausaAtendimentoHumano(remoteJid, `Cliente solicitou falar com ${nomeBarbeiroExibicao}`, nomeCliente, telefoneRealCliente);
-
-    // Resposta oficial da Elaine.IA ao cliente
-    const respostaAlertaCliente = `Vou encaminhar um alerta para o *${nomeBarbeiroExibicao}* agora mesmo! 🔔\n\nProntinho, encaminhei o alerta para ele e ele já foi notificado! Se quiser adiantar o agendamento enquanto ele responde, você pode fazer diretamente pelo nosso Booksy:\n👉 *${linkBooksy}* 💈`;
-
-    await enviarRespostaHumanizada(respostaAlertaCliente);
-    registrarAtividadeConversa(remoteJid, {
-      numero: telefoneRealCliente,
-      nome: nomeCliente,
-      ultimaMensagem: respostaAlertaCliente,
-      ultimoRemetente: "IA",
-      status: "HUMANO",
-      motivoPausa: `Alerta enviado para ${nomeBarbeiroExibicao}`
-    });
-    return;
   }
 
   // =========================================================================
