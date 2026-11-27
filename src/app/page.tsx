@@ -1373,14 +1373,14 @@ export default function Dashboard() {
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden font-sans selection:bg-amber-500 selection:text-black">
       
-      {/* SIDEBAR DE NAVEGAÇÃO */}
-      <aside className="w-64 border-r border-zinc-800/80 bg-zinc-900/40 p-5 flex flex-col justify-between select-none">
-        <div className="space-y-6">
+      {/* SIDEBAR DE NAVEGAÇÃO REORGANIZADA E ROLÁVEL */}
+      <aside className="w-64 border-r border-zinc-800/80 bg-zinc-900/40 p-4 flex flex-col justify-between select-none h-screen overflow-y-auto">
+        <div className="space-y-4">
           
           {/* Logo e Nome da Barbearia */}
-          <div className="flex items-center gap-3 px-1 group">
-            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner flex-shrink-0">
-              <Scissors className="w-5 h-5" />
+          <div className="flex items-center gap-3 px-1 group pb-1">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner flex-shrink-0">
+              <Scissors className="w-4 h-4" />
             </div>
             <div className="min-w-0 flex-1">
               <div 
@@ -1399,13 +1399,13 @@ export default function Dashboard() {
                 </h1>
                 <Edit className="w-3.5 h-3.5 text-zinc-500 group-hover/title:text-amber-400 opacity-60 group-hover/title:opacity-100 transition flex-shrink-0" />
               </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[11px] text-emerald-400 flex items-center gap-1 font-semibold">
+              <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-semibold">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                  SQLite Local Ativo
+                  SQLite Ativo
                 </span>
-                <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide animate-pulse">
-                  v2.7.0 • INTELIGÊNCIA ARTIFICIAL GEMINI PRONTA
+                <span className="text-[9px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-bold tracking-wide">
+                  v2.8 • Elaine.IA
                 </span>
               </div>
             </div>
@@ -1484,9 +1484,9 @@ export default function Dashboard() {
                 Conversas & IA
               </div>
               {conversas.filter(c => c.status === "HUMANO").length > 0 ? (
-                <span className="text-[10px] bg-amber-500 text-black font-extrabold px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1">
+                <span className="text-[10px] bg-amber-500 text-black font-extrabold px-2 py-0.5 rounded-full animate-pulse flex items-center gap-1 whitespace-nowrap shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-black"></span>
-                  {conversas.filter(c => c.status === "HUMANO").length} em pausa
+                  {conversas.filter(c => c.status === "HUMANO").length} pausa
                 </span>
               ) : (
                 <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${activeTab === "conversas" ? "bg-black/20 text-black" : "bg-zinc-800 text-zinc-400"}`}>
@@ -1553,45 +1553,11 @@ export default function Dashboard() {
           </nav>
         </div>
 
-        {/* Rodapé da Sidebar - Atalho Booksy */}
-        <div className="space-y-2">
-          {/* Card do Usuário Logado e Botão de Bloqueio */}
-          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 flex items-center justify-between">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
-                <Lock className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">Admin GM</div>
-                <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Conectado
-                </div>
-              </div>
-            </div>
-
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition flex items-center gap-1"
-              title="Bloquear Painel / Sair"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-
-          <div className="bg-zinc-950/80 p-3.5 rounded-2xl border border-zinc-800/80 text-xs">
-            <div className="text-zinc-400 text-[11px] mb-1 font-medium">Booksy Oficial Integrado:</div>
-            <a 
-              href={data?.config?.link_booksy || "https://booksy.com"} 
-              target="_blank" 
-              className="text-amber-400 hover:underline flex items-center gap-1.5 font-bold truncate"
-            >
-              Abrir Booksy da GM <ExternalLink className="w-3 h-3 flex-shrink-0" />
-            </a>
-          </div>
-
+        {/* Rodapé da Sidebar - Reorganizado e Otimizado */}
+        <div className="space-y-2 pt-3 border-t border-zinc-800/60 mt-auto">
           {/* Alerta de Atualização Pendente no GitHub */}
           {statusAtualizacao?.temAtualizacao && (
-            <div className="bg-amber-950/40 p-3 rounded-2xl border border-amber-500/40 text-xs space-y-2 animate-pulse">
+            <div className="bg-amber-950/40 p-2.5 rounded-xl border border-amber-500/40 text-xs space-y-2 animate-pulse">
               <div className="flex items-center justify-between">
                 <span className="font-bold text-amber-300 text-[11px] flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Nova Atualização!
@@ -1604,33 +1570,70 @@ export default function Dashboard() {
                 type="button"
                 onClick={aplicarAtualizacao}
                 disabled={aplicandoAtualizacao}
-                className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-xl transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
+                className="w-full py-1.5 bg-amber-500 hover:bg-amber-400 text-black font-black text-xs rounded-lg transition shadow-md shadow-amber-500/20 flex items-center justify-center gap-1.5"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${aplicandoAtualizacao ? "animate-spin" : ""}`} />
+                <RefreshCw className={`w-3 h-3 ${aplicandoAtualizacao ? "animate-spin" : ""}`} />
                 {aplicandoAtualizacao ? "Atualizando..." : "Atualizar Sistema"}
               </button>
             </div>
           )}
 
-          {/* Badge de Licença Oficial Ativa */}
-          <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-xs flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="text-[11px] font-bold text-zinc-300">Licença Oficial Ativa</span>
+          {/* Card do Usuário Logado + Licença Integrada */}
+          <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 flex-shrink-0">
+                  <Lock className="w-3.5 h-3.5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate flex items-center gap-1.5">
+                    <span>Admin GM</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Conectado"></span>
+                  </div>
+                  <div className="text-[10px] text-zinc-400">Logado no painel</div>
+                </div>
+              </div>
+
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg text-zinc-500 hover:text-red-400 hover:bg-red-500/10 transition"
+                title="Bloquear Painel / Sair"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
             </div>
-            <button
-              onClick={() => checarLicenca(true)}
-              disabled={checandoLicenca}
-              className="text-zinc-500 hover:text-amber-400 transition"
-              title="Sincronizar licença com o servidor"
-            >
-              <RefreshCw className={`w-3 h-3 ${checandoLicenca ? "animate-spin" : ""}`} />
-            </button>
+
+            <div className="pt-1 border-t border-zinc-800/60 flex items-center justify-between text-[10px]">
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span className="font-semibold text-zinc-300">Licença Oficial Ativa</span>
+              </div>
+              <button
+                onClick={() => checarLicenca(true)}
+                disabled={checandoLicenca}
+                className="text-zinc-500 hover:text-amber-400 transition"
+                title="Sincronizar licença com o servidor"
+              >
+                <RefreshCw className={`w-3 h-3 ${checandoLicenca ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
 
-          {/* Card de Acesso Wi-Fi / Celular na Barbearia */}
+          {/* Booksy Oficial Integrado */}
+          <div className="bg-zinc-950/80 px-3 py-2 rounded-xl border border-zinc-800/80 text-xs flex items-center justify-between">
+            <span className="text-zinc-400 text-[10px] font-medium">Booksy Oficial:</span>
+            <a 
+              href={data?.config?.link_booksy || "https://booksy.com"} 
+              target="_blank" 
+              className="text-amber-400 hover:underline flex items-center gap-1 text-[11px] font-bold truncate"
+            >
+              Abrir Booksy <ExternalLink className="w-3 h-3 flex-shrink-0" />
+            </a>
+          </div>
+
+          {/* Card de Acesso Wi-Fi / Celular na Barbearia (Totalmente Visível) */}
           {data?.rede?.ipLocal && data.rede.ipLocal !== "localhost" && (
-            <div className="bg-zinc-950/80 p-3 rounded-2xl border border-zinc-800/80 text-xs space-y-1">
+            <div className="bg-zinc-950/80 p-2.5 rounded-xl border border-zinc-800/80 text-xs space-y-1">
               <div className="flex items-center justify-between text-[11px] text-zinc-400">
                 <span className="font-bold flex items-center gap-1.5 text-zinc-300">
                   <Phone className="w-3 h-3 text-amber-400" /> Acesso no Celular
@@ -1647,7 +1650,7 @@ export default function Dashboard() {
                     navigator.clipboard.writeText(data.rede.urlAcessoCelular);
                     mostrarFeedback("Link de acesso móvel copiado!", "success");
                   }}
-                  className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] font-bold transition"
+                  className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded text-[10px] font-bold transition shrink-0"
                   title="Copiar Link para o Celular"
                 >
                   Copiar
@@ -1655,8 +1658,6 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-
-
         </div>
       </aside>
 
