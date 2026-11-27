@@ -1851,9 +1851,9 @@ async function processarMensagemRobo(
     tLimpo.includes("tudo bem") ||
     tLimpo.includes("td bem")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Tudo ótimo por aqui, e com você? É um imenso prazer falar com você! Como posso te ajudar hoje na *${barbearia}*?`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Tudo ótimo por aqui, e com você? Como posso te ajudar hoje na *${barbearia}*?`;
   } else {
-    respostaContingencia = `Olá, *${nomeCliente}*! Como posso te ajudar hoje na *${barbearia}*? Se desejar agendar um horário sem fila, você pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Como posso te ajudar hoje na *${barbearia}*?`;
   }
 
   await enviarRespostaHumanizada(respostaContingencia);

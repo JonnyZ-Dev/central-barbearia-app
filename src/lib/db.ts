@@ -272,9 +272,10 @@ function initSchema(db: DatabaseSync) {
     db.exec(`UPDATE configuracoes SET robo_pausado = 0 WHERE id = 'default' AND (licenca_status IS NULL OR licenca_status != 'BLOQUEADO');`);
   } catch (e) {}
 
-  // Garante que a IA Elaine.IA esteja ativa nas configurações
+  // Garante que a IA Elaine.IA esteja ativa nas configurações e com o prompt progressivo atualizado
   try {
     db.exec(`UPDATE configuracoes SET gemini_ativo = 1 WHERE id = 'default' AND (gemini_ativo IS NULL OR gemini_ativo = 0);`);
+    db.exec(`UPDATE configuracoes SET gemini_prompt_personalizado = NULL WHERE id = 'default' AND gemini_prompt_personalizado LIKE '%1. APRESENTAÇÃO ÚNICA%';`);
   } catch (e) {}
 
   // Criação de Índices de Ultra Performance (Consultas sub-milissegundo com 0% uso de CPU)
