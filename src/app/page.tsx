@@ -2107,11 +2107,11 @@ export default function Dashboard() {
                   <button
                     onClick={handleSincronizarBooksy}
                     disabled={sincronizandoBooksy}
-                    className="bg-zinc-900 hover:bg-zinc-800 text-zinc-200 border border-zinc-700/80 px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition active:scale-95 shadow-sm"
+                    className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-4 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition active:scale-95 shadow-sm"
                     title="Buscar e sincronizar preços atualizados diretamente da página oficial do Booksy"
                   >
-                    <RefreshCw className={`w-3.5 h-3.5 ${sincronizandoBooksy ? "animate-spin text-amber-400" : "text-amber-400"}`} />
-                    {sincronizandoBooksy ? "Sincronizando Booksy..." : "Sincronizar com Booksy"}
+                    <RefreshCw className={`w-4 h-4 ${sincronizandoBooksy ? "animate-spin text-amber-400" : "text-amber-400"}`} />
+                    {sincronizandoBooksy ? "Sincronizando Preços..." : "Sincronizar Tabela de Preço"}
                   </button>
 
                   <button 
@@ -2428,7 +2428,17 @@ export default function Dashboard() {
                 </p>
               </div>
 
-
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={handleSincronizarBooksy}
+                  disabled={sincronizandoBooksy}
+                  className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3.5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 transition active:scale-95 shadow-sm"
+                  title="Sincronizar imediatamente a tabela de preços do robô com o Booksy oficial"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${sincronizandoBooksy ? "animate-spin text-amber-400" : "text-amber-400"}`} />
+                  {sincronizandoBooksy ? "Sincronizando Preços..." : "Sincronizar Tabela de Preço"}
+                </button>
+              </div>
             </div>
 
             {/* Card de Atendimentos Humanos Ativos (Pausa Inteligente) */}
