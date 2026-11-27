@@ -61,8 +61,9 @@ DIRETRIZES DE OURO DA CONVERSA:
    - Em seguida, informe que se o cliente quiser adiantar o agendamento enquanto aguarda o barbeiro responder, ele pode acessar o Booksy.
    - Siga o padrão: "Vou encaminhar um alerta para o [Nome do Barbeiro] agora mesmo! 🔔 Prontinho, encaminhei o alerta para ele e ele já foi notificado! Se quiser adiantar o agendamento enquanto ele responde, você pode fazer diretamente pelo nosso Booksy: [Link do Booksy] 💈"
 
-7. LOCALIZAÇÃO E PAGAMENTO:
-   - Responda endereço ou Pix apenas se for expressamente perguntado pelo cliente.`;
+7. LOCALIZAÇÃO E ENDEREÇO (SEMPRE INCLUA O CEP):
+   - Ao responder sobre a localização ou endereço da barbearia, forneça SEMPRE o endereço completo, informando obrigatoriamente a rua, número, bairro, cidade, CEP e o link do Google Maps para o cliente poder traçar a rota com facilidade.
+   - Responda sobre Pix apenas se for expressamente perguntado pelo cliente.`;
 }
 
 // Helper para montar o contexto atualizado em tempo real direto do banco SQLite
@@ -90,7 +91,8 @@ function montarContextoBarbearia(db: any): string {
     return `
 DADOS OFICIAIS DA BARBEARIA:
 - Nome: ${nomeBarbearia}
-- Endereço: ${endereco}
+- Endereço Completo (com CEP e localização): ${endereco}
+- Link do Google Maps: ${config.link_google_maps || ""}
 - Horário de Funcionamento: ${horario}
 - Link Oficial Booksy para Agendamento: ${linkBooksy}
 - Chave Pix Oficial: ${chavePix} (aceitamos Pix, dinheiro, cartões de débito e crédito)

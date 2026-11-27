@@ -1790,7 +1790,8 @@ async function processarMensagemRobo(
     tLimpo.includes("localizacao") || 
     tLimpo.includes("localização") || 
     tLimpo.includes("como chegar") || 
-    tLimpo.includes("rua")
+    tLimpo.includes("rua") ||
+    tLimpo.includes("cep")
   ) {
     respostaContingencia = `Olá, *${nomeCliente}*! Ficamos localizados em:\n📍 *${endereco}*\n\n${maps ? "🗺️ Link do mapa: " + maps + "\n\n" : ""}⏰ Horário de atendimento: ${horario}. Será um prazer receber você!`;
   } else if (
