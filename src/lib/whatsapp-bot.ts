@@ -128,64 +128,11 @@ const atendimentosHumanosCache = new Map<string, {
   expiraEm: number;
 }>();
 
-// Helper que valida comandos que o cliente usa para reativar o robô e trazer o menu
-// Helper que valida comandos e palavras-chave que reativam o robô quando em atendimento humano
+// Helper para reativação antecipada manual da IA durante atendimento humano
 function ehComandoReativarBot(texto: string): boolean {
   const t = (texto || "").trim().toLowerCase();
   if (!t) return false;
-
-  // Normalizar removendo pontuações como vírgulas, exclamações, etc.
-  const limpo = t.replace(/[!?,.;:\-_]/g, " ").replace(/\s+/g, " ").trim();
-
-  const comandos = [
-    "#sair", "sair", "#cancelar", "cancelar",
-    "#menu", "menu", "#opcoes", "#opções", "opcoes", "opções", "#ajuda", "ajuda",
-    "#ativar", "ativar", "#reativar", "reativar", "#bot",
-    "início", "inicio", "voltar", "voltar ao menu", "0", 
-    "#voltar", "comecar", "começar"
-  ];
-
-  if (comandos.includes(t) || comandos.includes(limpo)) {
-    return true;
-  }
-
-  // Qualquer saudação (mesmo com pontuação ou combinada: "oi", "oi boa noite", "ola tudo bem")
-  if (
-    /\b(oi|ola|olá|oie|opa|salve|fala|eai|e ai|bom dia|boa tarde|boa noite|tudo bem|td bem)\b/.test(limpo) ||
-    limpo.startsWith("oi") ||
-    limpo.startsWith("ola") ||
-    limpo.startsWith("olá")
-  ) {
-    return true;
-  }
-
-  if (
-    limpo.includes("agendar") ||
-    limpo.includes("marcar") ||
-    limpo.includes("horario") ||
-    limpo.includes("horário") ||
-    limpo.includes("vaga") ||
-    limpo.includes("booksy") ||
-    limpo.includes("preco") ||
-    limpo.includes("preço") ||
-    limpo.includes("quanto custa") ||
-    limpo.includes("valor") ||
-    limpo.includes("tabela") ||
-    limpo.includes("onde fica") ||
-    limpo.includes("endereco") ||
-    limpo.includes("endereço") ||
-    limpo.includes("como chegar") ||
-    limpo.includes("pix") ||
-    limpo.includes("pagamento") ||
-    limpo.includes("cartao") ||
-    limpo.includes("cartão") ||
-    limpo.includes("plano") ||
-    limpo.includes("mensalista") ||
-    limpo.includes("assinatura")
-  ) {
-    return true;
-  }
-  return false;
+  return t === "/ia" || t === "/retomar" || t === "/liberar";
 }
 
 // Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência e retries
@@ -325,7 +272,7 @@ export function ativarPausaAtendimentoHumano(
   try {
     const db = getDb();
     const config: any = db.prepare("SELECT tempo_pausa_humano_minutos FROM configuracoes WHERE id = 'default'").get() || {};
-    const minutosPausa = Number(config.tempo_pausa_humano_minutos || 120); // 120 minutos (2 horas) por padrão
+    const minutosPausa = Number(config.tempo_pausa_humano_minutos || 30); // 30 minutos sem interação por padrão
     const agora = Date.now();
     const expiraEm = agora + (minutosPausa * 60 * 1000);
     const iniciadoEm = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -373,6 +320,7 @@ export function verificarAtendimentoHumanoAtivo(remoteJid: string): boolean {
     try {
       getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ?").run(remoteJid);
     } catch (e) {}
+    console.log(`[ATENDIMENTO HUMANO EXPIRADO] 30 minutos sem interação para ${remoteJid}. Elaine.IA assumindo o comando novamente!`);
     return false;
   }
 
@@ -906,114 +854,37 @@ export async function iniciarWhatsAppBot() {
               ""
             ).trim().toLowerCase();
 
-            // COMANDO 1: INICIAR ATENDIMENTO MANUALMENTE (#INICIAR)
+            // COMANDO OFICIAL: ASSUMIR ATENDIMENTO HUMANO (/atender)
             if (
-              textoAtendente === "#iniciar" ||
-              textoAtendente === "iniciar" ||
-              textoAtendente === "iniciar atendimento" ||
-              textoAtendente === "iniciando atendimento" ||
-              textoAtendente === "#atender" ||
-              textoAtendente === "#humano" ||
-              textoAtendente === "assumir atendimento" ||
-              textoAtendente === "!atender"
+              textoAtendente === "/atender" ||
+              textoAtendente === "!atender" ||
+              textoAtendente === "atender"
             ) {
               ativarPausaAtendimentoHumano(
                 remoteJid,
-                "Atendente iniciou atendimento manualmente ('iniciar atendimento')",
+                "Atendente assumiu com /atender",
                 (msg as any)?.pushName,
                 telLimpo
               );
-              console.log(`[COMANDO ATENDIMENTO] Atendente digitou 'iniciar atendimento' para ${remoteJid}!`);
-              
-              try {
-                const db = getDb();
-                const cfg: any = db.prepare("SELECT nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
-                const nomeBarbearia = String(cfg.nome_barbearia || "GM Barbershop");
-                const msgRow: any = db.prepare("SELECT mensagem FROM bot_mensagens WHERE id = 'msg_humano_assumiu'").get();
-                const template = msgRow?.mensagem || "👨‍💼 *Atendimento Iniciado:* Nosso profissional da equipe *{barbearia}* acabou de assumir a conversa e falará diretamente com você a partir de agora! 💈";
-                const textoFormatado = template.replace(/{barbearia}/g, nomeBarbearia).replace(/{cliente}/g, (msg as any)?.pushName || "amigo");
-                await enviarMensagemDoBot(remoteJid, { text: textoFormatado });
-              } catch (e) {}
-
+              console.log(`[COMANDO /ATENDER] Atendente assumiu a conversa com ${remoteJid}! Elaine.IA em pausa por 30 minutos.`);
               continue;
             }
 
-            // COMANDO 2: REATIVAR O ROBÔ NA CONVERSA (#ATIVAR)
+            // COMANDO AUXILIAR: LIBERAR ELAINE.IA ANTECIPADAMENTE (/ia)
             if (
-              textoAtendente === "#ativar" ||
-              textoAtendente === "ativar" ||
-              textoAtendente === "#reativar" ||
-              textoAtendente === "reativar" ||
-              textoAtendente === "finalizar atendimento" ||
-              textoAtendente === "encerrar atendimento" ||
-              textoAtendente === "#finalizar" ||
-              textoAtendente === "#encerrar" ||
-              textoAtendente === "#bot" ||
-              textoAtendente === "!finalizar"
+              textoAtendente === "/ia" ||
+              textoAtendente === "/retomar" ||
+              textoAtendente === "/liberar"
             ) {
               removerPausaAtendimentoHumano(remoteJid);
-              console.log(`[COMANDO ENCERRAMENTO] Atendente digitou 'finalizar atendimento' para ${remoteJid}!`);
-              
-              try {
-                const db = getDb();
-                const cfg: any = db.prepare("SELECT nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
-                const nomeBarbearia = String(cfg.nome_barbearia || "GM Barbershop");
-                const msgRow: any = db.prepare("SELECT mensagem FROM bot_mensagens WHERE id = 'msg_fim_atendimento'").get();
-                const template = msgRow?.mensagem || "✅ *Atendimento finalizado!* Agradecemos a preferência na *{barbearia}*. Se precisar agendar ou tirar dúvidas a qualquer momento, basta mandar um *oi* que o robô estará à disposição! 💈";
-                const textoFormatado = template.replace(/{barbearia}/g, nomeBarbearia).replace(/{cliente}/g, (msg as any)?.pushName || "amigo");
-                await enviarMensagemDoBot(remoteJid, { text: textoFormatado });
-              } catch (e) {}
-
+              console.log(`[COMANDO /IA] Elaine.IA retomada manualmente para ${remoteJid}!`);
               continue;
             }
 
-                        // COMANDO 3: PAUSAR ROBÔ GLOBALMENTE PELO WHATSAPP
-            if (
-              textoAtendente === "pausar bot" ||
-              textoAtendente === "#pausar bot" ||
-              textoAtendente === "#pausar" ||
-              textoAtendente === "pausar robo" ||
-              textoAtendente === "#pausa"
-            ) {
-              setRoboPausado(true);
-              console.log("[COMANDO WHATSAPP] Robô pausado globalmente pelo atendente!");
-              try {
-                const db = getDb();
-                const cfg: any = db.prepare("SELECT nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
-                const nomeBarbearia = String(cfg.nome_barbearia || "GM Barbershop");
-                await enviarMensagemDoBot(remoteJid, { 
-                  text: `⏸️ *Robô da ${nomeBarbearia} Pausado!*\n\nA conexão continua ativa, mas o robô *não responderá* mensagens automáticas até ser retomado.\n\n_Para retomar, digite *retomar bot* aqui ou clique em 'Retomar Robô' no painel._` 
-                });
-              } catch (e) {}
-              continue;
-            }
-
-            // COMANDO 4: RETOMAR ROBÔ GLOBALMENTE PELO WHATSAPP
-            if (
-              textoAtendente === "retomar bot" ||
-              textoAtendente === "#retomar bot" ||
-              textoAtendente === "#despausar" ||
-              textoAtendente === "#ativar bot" ||
-              textoAtendente === "iniciar bot" ||
-              textoAtendente === "despausar bot"
-            ) {
-              setRoboPausado(false);
-              console.log("[COMANDO WHATSAPP] Robô retomado globalmente pelo atendente!");
-              try {
-                const db = getDb();
-                const cfg: any = db.prepare("SELECT nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
-                const nomeBarbearia = String(cfg.nome_barbearia || "GM Barbershop");
-                await enviarMensagemDoBot(remoteJid, { 
-                  text: `▶️ *Robô da ${nomeBarbearia} Retomado!*\n\nAs respostas automáticas e o menu voltaram a operar normalmente para todos os clientes! 💈` 
-                });
-              } catch (e) {}
-              continue;
-            }
-
-            // Qualquer outra mensagem digitada pelo atendente no celular ativa/renova a pausa
+            // Qualquer mensagem digitada pelo atendente no celular ou WhatsApp Web RENOVA a pausa de 30 minutos
             ativarPausaAtendimentoHumano(
               remoteJid,
-              "Atendente conversando no celular",
+              "Atendente conversando no WhatsApp",
               (msg as any)?.pushName,
               telLimpo
             );
@@ -1023,9 +894,9 @@ export async function iniciarWhatsAppBot() {
               ultimaMensagem: textoAtendente,
               ultimoRemetente: "HUMANO",
               status: "HUMANO",
-              motivoPausa: "Atendente conversando no celular"
+              motivoPausa: "Atendente conversando no WhatsApp"
             });
-            console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. Robô pausado para esta conversa.`);
+            console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. IA pausada por 30 minutos.`);
             continue;
           }
 
@@ -1777,13 +1648,16 @@ async function processarMensagemRobo(
     tLimpoMsg.includes("duvida com") ||
     tLimpoMsg.includes("dúvida com") ||
     tLimpoMsg.includes("atendente") ||
-    tLimpoMsg.includes("humano")
+    tLimpoMsg.includes("humano") ||
+    tLimpoMsg === "/atender" ||
+    tLimpoMsg === "atender" ||
+    tLimpoMsg === "/humano"
   );
 
   const barbeiroMencionado = 
     (tLimpoMsg.includes("erick") || tLimpoMsg.includes("eric")) ? "Erick" :
     (tLimpoMsg.includes("gabriel")) ? "Gabriel" :
-    (tLimpoMsg.includes("barbeiro") || tLimpoMsg.includes("atendente") || tLimpoMsg.includes("humano")) ? "Barbeiro" : null;
+    (tLimpoMsg.includes("barbeiro") || tLimpoMsg.includes("atendente") || tLimpoMsg.includes("humano") || tLimpoMsg === "/atender" || tLimpoMsg === "atender") ? "Barbeiro" : null;
 
   if (querFalarComBarbeiro && barbeiroMencionado) {
     const db = getDb();

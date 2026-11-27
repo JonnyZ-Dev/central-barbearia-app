@@ -278,6 +278,7 @@ function initSchema(db: DatabaseSync) {
     db.exec(`UPDATE configuracoes SET gemini_ativo = 1 WHERE id = 'default';`);
     db.exec(`UPDATE configuracoes SET gemini_api_key = '${DEFAULT_KEY}' WHERE id = 'default' AND (gemini_api_key IS NULL OR TRIM(gemini_api_key) = '' OR gemini_api_key LIKE 'AIzaSy%' OR gemini_api_key NOT LIKE 'AQ.%');`);
     db.exec(`UPDATE configuracoes SET gemini_prompt_personalizado = NULL WHERE id = 'default';`);
+    db.exec(`UPDATE configuracoes SET tempo_pausa_humano_minutos = 30 WHERE id = 'default' AND (tempo_pausa_humano_minutos IS NULL OR tempo_pausa_humano_minutos > 30);`);
   } catch (e) {}
 
   // Criação de Índices de Ultra Performance (Consultas sub-milissegundo com 0% uso de CPU)
