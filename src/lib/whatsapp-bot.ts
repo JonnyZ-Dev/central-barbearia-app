@@ -1704,491 +1704,45 @@ async function processarMensagemRobo(
   // FLUXO DE ROTEAMENTO DINÂMICO E TREINAMENTO DE RESPOSTAS
   // =========================================================================
 
-  // SE O CLIENTE ENVIOU UM ÁUDIO:
-  // Nunca envia o menu! Reconhece o áudio, avisa que a equipe vai ouvir e ativa a pausa humana!
+  // =========================================================================
+  // 1. COMANDOS ADMINISTRATIVOS EXCLUSIVOS DO ATENDENTE / BARBEIRO
+  // =========================================================================
+
+  // COMANDO #INICIAR / #PAUSAR (Barbeiro assume manualmente a conversa no celular)
+  if (texto === "#iniciar" || texto === "#pausar") {
+    ativarPausaAtendimentoHumano(remoteJid, "Atendimento humano assumido via comando", extraInfo?.pushName, numeroLimpo);
+    const resposta = `👨‍💼 *Atendimento Iniciado:* Nosso profissional da equipe *${barbearia}* acabou de assumir a conversa e falará diretamente com você a partir de agora! 💈`;
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // COMANDO #ATIVAR / #REATIVAR (Barbeiro devolve o atendimento para a Elaine.IA)
+  if (texto === "#ativar" || texto === "#reativar") {
+    removerPausaAtendimentoHumano(remoteJid);
+    const resposta = `✨ *Atendimento Reativado!* Sou a Elaine.IA, assistente virtual da *${barbearia}*, e estou de volta à sua disposição. Como posso te ajudar? 💈`;
+    await enviarRespostaHumanizada(resposta);
+    return;
+  }
+
+  // =========================================================================
+  // 2. SE O CLIENTE ENVIOU UM ÁUDIO:
+  // Avisa com a persona educada da Elaine.IA e pausa para a equipe ouvir
+  // =========================================================================
   if (extraInfo?.ehAudio) {
-    const respostaAudio = preencherTemplate(
-      "msg_audio_recebido",
-      `Fala parceiro! Recebemos seu áudio! 🎧\n\nJá notifiquei nossa equipe na *{barbearia}*. Como nossos barbeiros podem estar em atendimento na cadeira agora, vamos ouvir seu áudio e te responder aqui em instantes! 💈\n\n📲 Se for sobre agendamento, você também pode marcar direto no Booksy sem fila:\n👉 *{link_booksy}*`
-    );
+    const respostaAudio = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Recebi seu áudio com sucesso! 🎧\n\nNossa equipe já foi notificada para ouvir com atenção e te responder em breve. Caso deseje agendar seu horário sem fila, você também pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
     await enviarRespostaHumanizada(respostaAudio);
     ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou áudio", extraInfo?.pushName, numeroLimpo);
     return;
   }
 
-  // SE O CLIENTE ENVIOU IMAGEM / COMPROVANTE (sem texto de comando):
+  // =========================================================================
+  // 3. SE O CLIENTE ENVIOU IMAGEM / COMPROVANTE (sem texto de comando):
+  // Avisa com a persona educada da Elaine.IA e pausa para a equipe conferir
+  // =========================================================================
   if (extraInfo?.ehImagem && !texto) {
-    const respostaImagem = preencherTemplate(
-      "msg_imagem_recebida",
-      `Opa parceiro! Recebemos sua imagem / comprovante! 📸\n\nJá avisei nossa equipe aqui na *{barbearia}* para conferir. Em instantes confirmamos aqui para você! 💈`
-    );
+    const respostaImagem = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Recebi sua imagem / comprovante! 📸\n\nJá encaminhei para nossa equipe conferir e confirmar para você em instantes. Tenha um excelente dia! 💈`;
     await enviarRespostaHumanizada(respostaImagem);
     ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou imagem / comprovante", extraInfo?.pushName, numeroLimpo);
-    return;
-  }
-
-  // CANCELAMENTO / REMARCAÇÃO / AVISO DE ATRASO DE HORÁRIO
-  if (
-    texto.includes("cancelar") ||
-    texto.includes("desmarcar") ||
-    texto.includes("remarcar") ||
-    texto.includes("trocar horario") ||
-    texto.includes("trocar horário") ||
-    texto.includes("mudar horario") ||
-    texto.includes("mudar horário") ||
-    texto.includes("nao vou conseguir") ||
-    texto.includes("não vou conseguir") ||
-    texto.includes("nao consigo ir") ||
-    texto.includes("não consigo ir") ||
-    texto.includes("nao poderei") ||
-    texto.includes("não poderei") ||
-    texto.includes("vou me atrasar") ||
-    texto.includes("atraso") ||
-    texto.includes("atrasar")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_cancelamento_aviso",
-      `Tranquilo, *{cliente}*! Já avisamos a equipe da *{barbearia}* sobre o seu aviso de horário/cancelamento! 💈\n\nSe você agendou pelo Booksy, você também pode gerenciar ou reagendar facilmente por lá:\n👉 *{link_booksy}*\n\nEm instantes um dos nossos barbeiros vai confirmar com você aqui!`
-    );
-    await enviarRespostaHumanizada(resposta);
-    ativarPausaAtendimentoHumano(remoteJid, "Cliente avisou sobre horário / cancelamento", extraInfo?.pushName, numeroLimpo);
-    return;
-  }
-
-  // COMANDO #SAIR (CLIENTE CANCELA ESPERA E REATIVA O ROBÔ IMEDIATAMENTE)
-  if (
-    texto === "#sair" ||
-    texto === "sair" ||
-    texto === "#cancelar espera" ||
-    texto === "cancelar espera" ||
-    texto === "voltar pro bot" ||
-    texto === "voltar para o bot"
-  ) {
-    removerPausaAtendimentoHumano(remoteJid);
-    const resposta = preencherTemplate(
-      "msg_robo_reativado_cliente",
-      `🤖 *Atendimento Automático Retomado!* 💈\n\nCancelei a espera pelo barbeiro e estou de volta à sua disposição!\n\nComo posso te ajudar agora? Você pode perguntar sobre agendamento, valores dos serviços, localização ou digitar *#menu* para ver opções.`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // COMANDO #MENU (EXIBE O MENU COMPLETO DE OPÇÕES E ATALHOS)
-  if (
-    texto === "#menu" ||
-    texto === "menu" ||
-    texto === "#opcoes" ||
-    texto === "#opções" ||
-    texto === "opcoes" ||
-    texto === "opções" ||
-    texto === "#ajuda"
-  ) {
-    removerPausaAtendimentoHumano(remoteJid);
-    const resposta = preencherTemplate(
-      "msg_menu_opcoes",
-      `💈 *Menu de Atendimento - {barbearia}* 💈\n\nEscolha o que você precisa ou digite livremente sua dúvida:\n\n1️⃣ *Agendar Horário sem Fila (Booksy):*\n👉 {link_booksy}\n\n2️⃣ *Tabela de Preços & Serviços:*\nEnvie *preço* ou *serviços* para ver valores de corte, barba e químicas.\n\n3️⃣ *Planos Mensalistas VIP:*\nEnvie *planos* para conhecer nossos planos de corte semanal com desconto!\n\n4️⃣ *Endereço & Localização:*\nEnvie *endereço* ou *onde fica* para receber o mapa no GPS.\n\n5️⃣ *Horários de Funcionamento:*\nEnvie *horário* para consultar nosso horário de atendimento.\n\n6️⃣ *Chave Pix Oficial:*\nEnvie *pix* para ver os dados de pagamento.\n\n7️⃣ *Consultar seus Créditos (Mensalista):*\nEnvie *saldo* para consultar seus cortes restantes no mês.\n\n8️⃣ *Falar com a Equipe Humana:*\nEnvie *atendente* ou o nome do seu barbeiro (ex: *falar com Erick*).\n\n_💡 Você não precisa digitar números, basta escrever o que deseja que te respondo na hora!_`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // COMANDO #INICIAR (ASSUMIR ATENDIMENTO / PAUSAR O ROBÔ NESTA CONVERSA)
-  if (texto === "#iniciar" || texto === "#pausar") {
-    ativarPausaAtendimentoHumano(remoteJid, "Atendimento humano assumido via #iniciar", extraInfo?.pushName, numeroLimpo);
-    const resposta = preencherTemplate(
-      "msg_humano_assumiu",
-      `👨‍💼 *Atendimento Iniciado:* Nosso profissional da equipe *{barbearia}* acabou de assumir a conversa e falará diretamente com você a partir de agora! 💈`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // COMANDO #ATIVAR (REATIVAR ROBÔ NESTA CONVERSA)
-  if (texto === "#ativar" || texto === "#reativar") {
-    removerPausaAtendimentoHumano(remoteJid);
-    const resposta = preencherTemplate(
-      "msg_fim_atendimento",
-      `🤖 *Atendimento Automático Reativado!* O assistente virtual voltou a atender esta conversa normalmente. Se precisar de algo, estamos à disposição! 💈`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // VERIFICAÇÃO SE O CLIENTE CITOU OU ESCOLHEU UM BARBEIRO ESPECÍFICO
-  const barbeirosAtivos: any[] = db.prepare("SELECT * FROM barbeiros WHERE ativo = 1").all() || [];
-  for (const b of barbeirosAtivos) {
-    const nomeLower = String(b.nome || "").toLowerCase().trim();
-    const primeiroNome = nomeLower.split(" ")[0];
-    if (
-      texto === nomeLower ||
-      texto === primeiroNome ||
-      texto.includes(`barbeiro ${primeiroNome}`) ||
-      texto.includes(`com o ${primeiroNome}`) ||
-      texto.includes(`com a ${primeiroNome}`) ||
-      texto.includes(`com ${primeiroNome}`) ||
-      texto.includes(`atendimento com ${primeiroNome}`) ||
-      texto.includes(`falar com ${primeiroNome}`) ||
-      texto.includes(`agendar com ${primeiroNome}`)
-    ) {
-      let telBarbeiro = String(b.telefone_whatsapp || "").replace(/\D/g, "");
-      if (telBarbeiro.length >= 10 && !telBarbeiro.startsWith("55")) {
-        telBarbeiro = "55" + telBarbeiro;
-      }
-
-      if (telBarbeiro.length >= 12) {
-        const jidBarbeiro = `${telBarbeiro}@s.whatsapp.net`;
-        const msgAlertaBarbeiro = preencherTemplate(
-          "msg_alerta_barbeiro",
-          `🔔 *Aviso de Atendimento - ${b.nome}*\n\nO cliente *${nomeCliente}* (Tel: *${telefoneRealCliente}*) acabou de solicitar atendimento com você pelo WhatsApp da barbearia!\n\nAcesse o chat dele para dar sequência no atendimento assim que puder. 💈`,
-          {
-            nome_barbeiro: b.nome,
-            cliente: nomeCliente,
-            telefone_cliente: telefoneRealCliente
-          }
-        );
-
-        try {
-          await enviarMensagemDoBot(jidBarbeiro, { text: msgAlertaBarbeiro });
-          console.log(`[BOT] Notificação privada disparada para o barbeiro ${b.nome} (${jidBarbeiro})`);
-        } catch (errB) {
-          console.error(`[BOT] Erro ao enviar notificação privada ao barbeiro ${b.nome}:`, errB);
-        }
-      }
-
-      await enviarRespostaHumanizada(
-        `Perfeito, *${nomeCliente}*! Acabei de mandar um aviso particular no WhatsApp do *${b.nome}* avisando que você quer falar com ele! 💈📲\n\nAssim que ele liberar a cadeira, ele responderá aqui.\n\nSe preferir agendar no Booksy para garantir seu horário sem fila:\n👉 *${linkBooksy}*`
-      );
-      ativarPausaAtendimentoHumano(remoteJid, `Cliente solicitou atendimento com o barbeiro ${b.nome}`, extraInfo?.pushName, numeroLimpo);
-      return;
-    }
-  }
-
-  // =========================================================================
-  // ATENDIMENTO INTELIGENTE COM IA (GOOGLE GEMINI FLASH)
-  // Se a IA estiver ativa e com chave configurada, ela assume o atendimento
-  // com respostas ultra-curtas, humanizadas e naturais baseadas nos dados da barbearia.
-  // =========================================================================
-  if (config.gemini_ativo && config.gemini_api_key && String(config.gemini_api_key).trim().length > 10) {
-    const respostaIa = await gerarRespostaGemini(texto, remoteJid, nomeCliente);
-    if (respostaIa && respostaIa.trim().length > 0) {
-      await enviarRespostaHumanizada(respostaIa);
-      registrarAtividadeConversa(remoteJid, {
-        numero: telefoneRealCliente,
-        nome: nomeCliente,
-        ultimaMensagem: respostaIa,
-        ultimoRemetente: "IA",
-        status: "IA"
-      });
-      return;
-    }
-  }
-
-  // 1. AGENDAMENTO NO BOOKSY (Palavras-chave: agendar, marcar, horário, vaga, Booksy)
-  if (
-    texto === "1" ||
-    texto.includes("agendar") ||
-    texto.includes("marcar") ||
-    texto.includes("agendamento") ||
-    texto.includes("marcar horario") ||
-    texto.includes("marcar horário") ||
-    texto.includes("marcar um corte") ||
-    texto.includes("marcar corte") ||
-    texto.includes("cortar cabelo") ||
-    texto.includes("cortar o cabelo") ||
-    texto.includes("fazer cabelo") ||
-    texto.includes("vaga") ||
-    texto.includes("vagas") ||
-    texto.includes("booksy")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_booksy",
-      `Top, *${nomeCliente}*! Para agendar sem fila e escolher seu barbeiro favorito, acesse o link oficial do nosso Booksy:\n\n👉 *{link_booksy}*\n\n✅ Escolha o profissional e o serviço\n✅ Selecione o dia e horário que melhor se encaixam pra você\n✅ Confirmação instantânea no seu celular!\n\nTe esperamos na cadeira da *{barbearia}*! ✂️🔥`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 2. TABELA DE SERVIÇOS & PREÇOS (Palavras-chave: preço, valor, quanto custa, tabela, catálogo)
-  if (
-    texto === "2" ||
-    texto.includes("preco") ||
-    texto.includes("preço") ||
-    texto.includes("precos") ||
-    texto.includes("preços") ||
-    texto.includes("quanto custa") ||
-    texto.includes("quanto e") ||
-    texto.includes("quanto é") ||
-    texto.includes("tabela") ||
-    texto.includes("valor") ||
-    texto.includes("valores") ||
-    texto.includes("servico") ||
-    texto.includes("serviço") ||
-    texto.includes("servicos") ||
-    texto.includes("serviços") ||
-    texto.includes("catalogo") ||
-    texto.includes("catálogo")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_servicos",
-      `📋 *Tabela de Serviços & Valores - {barbearia}:* 💈\n\n{lista_servicos}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*\n\n🔑 *Chave Pix Oficial:* *{pix}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 3. ENDEREÇO & LOCALIZAÇÃO (Palavras-chave: onde fica, endereço, localização, como chegar, maps)
-  if (
-    texto === "5" ||
-    texto.includes("onde fica") ||
-    texto.includes("endereco") ||
-    texto.includes("endereço") ||
-    texto.includes("localizacao") ||
-    texto.includes("localização") ||
-    texto.includes("local") ||
-    texto.includes("como chegar") ||
-    texto.includes("qual a rua") ||
-    texto.includes("qual o bairro") ||
-    texto.includes("maps") ||
-    texto.includes("waze") ||
-    texto.includes("gps")
-  ) {
-    let lat: number | null = (config.latitude !== null && config.latitude !== undefined && config.latitude !== "") ? Number(config.latitude) : null;
-    let lng: number | null = (config.longitude !== null && config.longitude !== undefined && config.longitude !== "") ? Number(config.longitude) : null;
-
-    if ((lat === null || lng === null || isNaN(lat) || isNaN(lng)) && config.link_google_maps) {
-      const extraido = extrairCoordenadas(config.link_google_maps);
-      if (extraido) {
-        lat = extraido.lat;
-        lng = extraido.lng;
-      }
-    }
-
-    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-      try {
-        await new Promise(r => setTimeout(r, 1200 + Math.random() * 500));
-        await enviarMensagemDoBot(remoteJid, {
-          location: {
-            degreesLatitude: lat,
-            degreesLongitude: lng,
-            name: barbearia,
-            address: endereco,
-            url: maps
-          }
-        });
-        await new Promise(r => setTimeout(r, 800 + Math.random() * 400));
-      } catch (locErr) {
-        console.error("Erro ao enviar card de localização GPS:", locErr);
-      }
-    }
-
-    const resposta = preencherTemplate(
-      "msg_localizacao_pix",
-      `📍 *Endereço da Barbearia:*\n{endereco}\n\n🗺️ *Link direto no Google Maps / Waze:*\n{maps}\n\n⏰ *Horário de Funcionamento:*\n{horario}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 4. PIX & FORMAS DE PAGAMENTO (Palavras-chave: pix, chave pix, pagamento, pagar, cartão, dinheiro)
-  if (
-    texto.includes("pix") ||
-    texto.includes("chave pix") ||
-    texto.includes("pagamento") ||
-    texto.includes("pagar") ||
-    texto.includes("forma de pagamento") ||
-    texto.includes("formas de pagamento") ||
-    texto.includes("cartao") ||
-    texto.includes("cartão") ||
-    texto.includes("debito") ||
-    texto.includes("débito") ||
-    texto.includes("credito") ||
-    texto.includes("crédito") ||
-    texto.includes("dinheiro")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_pagamentos",
-      `💳 *Formas de Pagamento Aceitas - {barbearia}:*\n\nAceitamos Pix, cartões de débito/crédito e dinheiro! 💵\n\n🔑 *Chave Pix Oficial da Barbearia:* *{pix}*\n\n_(Caso seja pagamento de corte ou assinatura, por favor envie o comprovante com seu nome aqui no chat!)_`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 5. HORÁRIOS DE ATENDIMENTO / FUNCIONAMENTO (Palavras-chave: horário, que horas, abre, fecha, tá aberto)
-  if (
-    texto === "6" ||
-    texto === "8" ||
-    texto.includes("horario de funcionamento") ||
-    texto.includes("horário de funcionamento") ||
-    texto.includes("horario de atendimento") ||
-    texto.includes("horário de atendimento") ||
-    texto.includes("que horas") ||
-    texto.includes("abre") ||
-    texto.includes("fecha") ||
-    texto.includes("ta aberto") ||
-    texto.includes("tá aberto") ||
-    texto.includes("funciona ate") ||
-    texto.includes("funciona até")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_horarios",
-      `⏰ *Horários de Atendimento da {barbearia}:*\n\n{horario}\n\n📲 *Agende seu horário 24h pelo Booksy:*\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 6. PLANOS VIPS & CLUBE DE ASSINATURA (Palavras-chave: plano, planos, mensal, mensalista, clube, assinatura)
-  if (
-    texto.includes("plano") ||
-    texto.includes("planos") ||
-    texto.includes("clube") ||
-    texto.includes("assinatura") ||
-    texto.includes("mensal") ||
-    texto.includes("mensalista") ||
-    texto.includes("pacote") ||
-    texto.includes("pacotes")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_planos_vip",
-      `👑 *Conheça o Clube de Assinatura VIP da {barbearia}!* 💈\n\nCorte o cabelo toda semana e economize até 40% no mês! Vantagens exclusivas:\n\n{lista_planos}\n\n🔑 *Chave Pix Oficial para Assinaturas:* *{pix}*\n_(Após transferir, envie o comprovante com seu nome aqui no chat)_`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 7. CONSULTA DE CRÉDITOS DO MENSALISTA VIP (Palavras-chave: saldo, crédito, quantos cortes me restam)
-  if (
-    texto === "4" ||
-    texto.includes("saldo") ||
-    texto.includes("crédito") ||
-    texto.includes("credito") ||
-    texto.includes("quantos cortes") ||
-    texto.includes("meus cortes") ||
-    texto.includes("me resta") ||
-    texto.includes("minha assinatura")
-  ) {
-    if (mensalista) {
-      const resposta = preencherTemplate(
-        "msg_consulta_mensalista",
-        `Fala *${nomeCliente}*! Consultamos seu plano VIP aqui no sistema: 👑\n\n📌 *Seu Plano:* {plano}\n{detalhes_saldo}\n📅 *Validade do seu Ciclo:* {vencimento}\n\nAproveite seus benefícios e agende pelo Booksy:\n👉 *{link_booksy}*\n\n🔑 *Chave Pix para Renovação do Ciclo:* *{pix}*`
-      );
-      await enviarRespostaHumanizada(resposta);
-    } else {
-      await enviarRespostaHumanizada(
-        `Opa, *${nomeCliente}*! Não identificamos uma assinatura VIP ativa vinculada ao seu número de WhatsApp.\n\nQuer cortar o cabelo toda semana e economizar no mês? Conheça nossos Planos VIPs:\n\n${obterPlanosVipFormatados(db)}\n\n🔑 *Chave Pix:* *${chavePix}*`
-      );
-    }
-    return;
-  }
-
-  // 8. SERVIÇOS DE BARBA & BARBOTERAPIA
-  if (texto === "barba" || texto.includes("fazer barba") || texto.includes("fazer a barba") || texto.includes("aparar barba") || texto.includes("barboterapia")) {
-    const resposta = preencherTemplate(
-      "msg_barba_terapia",
-      `🧔 *Serviços de Barba na {barbearia}:*\n\n{servicos_barba}\n\n📲 *Agende seu horário sem fila no Booksy:*\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 9. PROCEDIMENTOS QUÍMICOS / LUZES / PLATINADO
-  if (
-    texto === "3" ||
-    texto.includes("quimica") ||
-    texto.includes("química") ||
-    texto.includes("platinado") ||
-    texto.includes("nevou") ||
-    texto.includes("nevar") ||
-    texto.includes("luzes") ||
-    texto.includes("progressiva") ||
-    texto.includes("botox") ||
-    texto.includes("selagem") ||
-    texto.includes("relaxamento")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_quimicas",
-      `⚡ *Procedimentos Químicos & Colorações da {barbearia}:*\n\n{servicos_quimica}\n\n⚠️ *Para procedimentos químicos, recomendamos agendar com antecedência pelo Booksy:*\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 10. CORTE INFANTIL / KIDS
-  if (texto.includes("infantil") || texto.includes("criança") || texto.includes("crianca") || texto.includes("kids") || texto.includes("filho") || texto.includes("menino")) {
-    const resposta = preencherTemplate(
-      "msg_cortes_infantis",
-      `👶 *Cortes Infantis / Kids na {barbearia}:*\n\nTemos todo o cuidado e paciência para atender a criançada no melhor estilo!\n\n📲 *Agende seu horário pelo Booksy:*\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 11. LISTA DE BARBEIROS DA EQUIPE
-  if (
-    texto.includes("barbeiro") ||
-    texto.includes("equipe") ||
-    texto.includes("profissionais") ||
-    texto.includes("quem atende")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_escolha_barbeiro",
-      `Com qual dos nossos profissionais você deseja ser atendido hoje? Digite o nome do barbeiro:\n\n{lista_barbeiros}\n\nAssim que você disser o nome, notificamos o barbeiro diretamente no WhatsApp dele! 💈📲`
-    );
-    await enviarRespostaHumanizada(resposta);
-    return;
-  }
-
-  // 12. FALAR COM ATENDENTE HUMANO
-  if (
-    texto === "7" ||
-    texto === "9" ||
-    texto.includes("humano") ||
-    texto.includes("atendente") ||
-    texto.includes("pessoa") ||
-    texto.includes("iniciar atendimento") ||
-    texto.includes("falar com alguem") ||
-    texto.includes("falar com alguém") ||
-    texto.includes("falar com uma pessoa") ||
-    texto.includes("falar com atendente")
-  ) {
-    const resposta = preencherTemplate(
-      "msg_atendimento_humano",
-      `Perfeito, *${nomeCliente}*! Já notificamos nossa equipe na *{barbearia}*. 👨‍💼\n\nComo nossos barbeiros podem estar em atendimento na cadeira agora, responderemos aqui em poucos minutos!\n\nSe for sobre agendamento, você também pode marcar direto no Booksy sem fila:\n👉 *{link_booksy}*`
-    );
-    await enviarRespostaHumanizada(resposta);
-    ativarPausaAtendimentoHumano(remoteJid, "Cliente solicitou atendente humano", extraInfo?.pushName, numeroLimpo);
-    return;
-  }
-
-  // 13. GATILHOS PERSONALIZADOS CADASTRADOS NO PAINEL
-  for (const mRow of msgsRows) {
-    if (mRow.gatilho && mRow.ativo !== 0) {
-      const palavras = String(mRow.gatilho).split(",").map((p: string) => p.trim().toLowerCase()).filter(Boolean);
-      const combinou = palavras.some((p: string) => texto === p || texto.includes(p));
-      if (combinou) {
-        const resposta = preencherTemplate(mRow.id, mRow.mensagem);
-        await enviarRespostaHumanizada(resposta);
-        return;
-      }
-    }
-  }
-
-  // 14. SAUDAÇÃO PURA (DISPARADA QUANDO O CLIENTE DIZ "OI", "OLÁ", "BOM DIA", SEM OUTRA PERGUNTA)
-  const saudacoesPuras = [
-    "0", "oi", "ola", "olá", "oie", "opa", "salve", "fala", "e ai", "e aí", "eai", 
-    "bom dia", "boa tarde", "boa noite", "tudo bem", "td bem", "menu", "início", "inicio", 
-    "voltar", "comecar", "começar", "#menu", "#bot"
-  ];
-  const textoLimpo = (texto || "").replace(/[!?,.;:\-_]/g, " ").replace(/\s+/g, " ").trim();
-  const ehSaudacaoPura = 
-    saudacoesPuras.includes(texto) || 
-    saudacoesPuras.includes(textoLimpo) || 
-    /^(oi|ola|olá|oie|opa|salve|fala|bom dia|boa tarde|boa noite)\b/.test(textoLimpo);
-
-  if (ehSaudacaoPura) {
-    const fallbackBoasVindas = `Fala parceiro! Seja muito bem-vindo à *{barbearia}*! 💈✂️\n\nComo posso te ajudar hoje?`;
-    const resposta = preencherTemplate("msg_boas_vindas", fallbackBoasVindas);
-    await enviarRespostaHumanizada(resposta);
     return;
   }
 
@@ -2197,12 +1751,98 @@ async function processarMensagemRobo(
     return;
   }
 
-  // 15. DEFAULT: SE NÃO FOI SAUDAÇÃO NEM PALAVRA-CHAVE CONHECIDA (MENSAGEM LIVRE / DÚVIDA)
-  // Encaminha amigavelmente para a equipe e pausa o robô para atendimento humano
-  const respostaDuvida = preencherTemplate(
-    "msg_duvida_humano",
-    `Opa parceiro! 💈 Recebemos sua mensagem!\n\nJá notifiquei a equipe da *{barbearia}*. Em instantes um dos nossos barbeiros vai te responder aqui diretamente! 👨‍💼\n\n📲 Se quiser adiantar e garantir seu horário no Booksy sem fila:\n👉 *{link_booksy}*`
-  );
-  await enviarRespostaHumanizada(respostaDuvida);
-  ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou mensagem livre / dúvida", extraInfo?.pushName, numeroLimpo);
+  // =========================================================================
+  // 4. ATENDIMENTO 100% EXCLUSIVO PELA ELAINE.IA (GOOGLE GEMINI FLASH)
+  // O robô de menus numéricos e respostas mecânicas foi totalmente eliminado.
+  // Toda e qualquer mensagem (preços, serviços, agendamento, endereço, dúvidas, saudações)
+  // é respondida exclusivamente pela Elaine.IA de forma educada, delicada e formal.
+  // =========================================================================
+
+  let respostaIa: string | null = null;
+
+  try {
+    respostaIa = await gerarRespostaGemini(texto, remoteJid, nomeCliente);
+  } catch (errIa: any) {
+    console.warn(`[IA ELAINE] Erro ao chamar Gemini: ${errIa.message}`);
+  }
+
+  if (respostaIa && respostaIa.trim().length > 0) {
+    await enviarRespostaHumanizada(respostaIa);
+    registrarAtividadeConversa(remoteJid, {
+      numero: telefoneRealCliente,
+      nome: nomeCliente,
+      ultimaMensagem: respostaIa,
+      ultimoRemetente: "IA",
+      status: "IA"
+    });
+    return;
+  }
+
+  // =========================================================================
+  // 5. RESPOSTA DE CONTINGÊNCIA NATIVA DA ELAINE.IA (Caso a API do Gemini oscile)
+  // NUNCA envia menus numéricos ou mensagens de robô.
+  // Mantém estritamente a voz, educação, tom delicado e formal da Elaine.IA.
+  // =========================================================================
+  console.log(`[IA ELAINE] Ativando contingência inteligente na persona da Elaine.IA para ${remoteJid}...`);
+
+  const tLimpo = texto.toLowerCase().trim();
+  let respostaContingencia = "";
+
+  if (
+    tLimpo.includes("agendar") || 
+    tLimpo.includes("marcar") || 
+    tLimpo.includes("horario") || 
+    tLimpo.includes("horário") || 
+    tLimpo.includes("vaga") || 
+    tLimpo.includes("booksy") || 
+    tLimpo.includes("corte")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Para agendar seu horário com total comodidade e sem fila, você pode escolher o serviço, barbeiro e horário diretamente pelo nosso Booksy:\n👉 *${linkBooksy}*\n\nSe precisar de mais alguma informação, estou à disposição!`;
+  } else if (
+    tLimpo.includes("preco") || 
+    tLimpo.includes("preço") || 
+    tLimpo.includes("valor") || 
+    tLimpo.includes("quanto") || 
+    tLimpo.includes("tabela") || 
+    tLimpo.includes("servico") || 
+    tLimpo.includes("serviço")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nossos serviços incluem cortes, barba e procedimentos completos. Você pode consultar todos os valores oficiais e agendar diretamente no nosso Booksy:\n👉 *${linkBooksy}*\n\nSe desejar saber o valor de um procedimento específico, é só me dizer!`;
+  } else if (
+    tLimpo.includes("onde") || 
+    tLimpo.includes("endereco") || 
+    tLimpo.includes("endereço") || 
+    tLimpo.includes("localizacao") || 
+    tLimpo.includes("localização") || 
+    tLimpo.includes("como chegar") || 
+    tLimpo.includes("rua")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Ficamos localizados em:\n📍 *${endereco}*\n\n${maps ? "🗺️ Link do mapa: " + maps + "\n\n" : ""}⏰ Horário de atendimento: ${horario}. Será um prazer receber você!`;
+  } else if (
+    tLimpo.includes("pix") || 
+    tLimpo.includes("pagamento") || 
+    tLimpo.includes("pagar") || 
+    tLimpo.includes("cartao") || 
+    tLimpo.includes("cartão")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nossa chave Pix oficial para pagamentos é: *${chavePix}*. Também aceitamos cartões de débito, crédito e dinheiro no local.`;
+  } else if (
+    tLimpo.includes("plano") || 
+    tLimpo.includes("mensalista") || 
+    tLimpo.includes("assinatura") || 
+    tLimpo.includes("clube")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nós temos planos mensalistas exclusivos para você manter o corte sempre impecável com desconto. Para conhecer as opções ou assinar, nossa equipe está à disposição para te apresentar todos os detalhes!`;
+  } else {
+    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*, e é um imenso prazer falar com você! Como posso te ajudar no dia de hoje? Caso deseje agendar um horário sem fila, você pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
+  }
+
+  await enviarRespostaHumanizada(respostaContingencia);
+  registrarAtividadeConversa(remoteJid, {
+    numero: telefoneRealCliente,
+    nome: nomeCliente,
+    ultimaMensagem: respostaContingencia,
+    ultimoRemetente: "IA",
+    status: "IA"
+  });
 }

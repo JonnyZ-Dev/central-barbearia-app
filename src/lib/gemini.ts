@@ -117,7 +117,7 @@ export async function gerarRespostaGemini(
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000); // Timeout rápido de 5s para não atrasar o WhatsApp
+        const timeout = setTimeout(() => controller.abort(), 8000); // 8s de timeout para permitir resposta fluida sem corte prematuro
 
         const genConfig: any = {
           temperature: 0.7,
