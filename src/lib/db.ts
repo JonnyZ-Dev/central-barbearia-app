@@ -272,6 +272,11 @@ function initSchema(db: DatabaseSync) {
     db.exec(`UPDATE configuracoes SET robo_pausado = 0 WHERE id = 'default' AND (licenca_status IS NULL OR licenca_status != 'BLOQUEADO');`);
   } catch (e) {}
 
+  // Garante que a IA Elaine.IA esteja ativa nas configurações
+  try {
+    db.exec(`UPDATE configuracoes SET gemini_ativo = 1 WHERE id = 'default' AND (gemini_ativo IS NULL OR gemini_ativo = 0);`);
+  } catch (e) {}
+
   // Criação de Índices de Ultra Performance (Consultas sub-milissegundo com 0% uso de CPU)
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_mensalistas_whatsapp ON mensalistas(whatsapp);

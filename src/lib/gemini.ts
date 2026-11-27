@@ -84,11 +84,12 @@ export async function gerarRespostaGemini(
     const db = getDb();
     const config: any = db.prepare("SELECT gemini_api_key, gemini_ativo, gemini_prompt_personalizado, nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
 
-    const apiKey = (config.gemini_api_key || "").trim();
+    const apiKey = (config.gemini_api_key || process.env.GEMINI_API_KEY || "").trim();
     const ativo = config.gemini_ativo !== undefined ? Boolean(config.gemini_ativo) : true;
 
     // Se não tiver chave de API cadastrada ou a IA estiver desativada, retorna null para usar fallback local
     if (!apiKey || !ativo) {
+      console.log(`[GEMINI IA] Pulando chamada: apiKey=${apiKey ? "PRESENTE" : "VAZIA"}, ativo=${ativo}`);
       return null;
     }
 
@@ -109,24 +110,28 @@ export async function gerarRespostaGemini(
       { role: "user", parts: [{ text: mensagemCliente }] }
     ];
 
-    // Chamada à API oficial do Google Gemini (com suporte aos modelos mais recentes e fallback automático)
-    const modelosTentativa = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"];
+    // Chamada à API oficial do Google Gemini (modelos ultra rápidos otimizados para WhatsApp)
+    const modelosTentativa = [
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-lite-latest",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash"
+    ];
     let respostaTexto: string | null = null;
 
     for (const modelo of modelosTentativa) {
+      const inicioTentativa = Date.now();
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 8000); // 8s de timeout para permitir resposta fluida sem corte prematuro
+        const timeout = setTimeout(() => controller.abort(), 6000); // 6s de timeout ágil
 
         const genConfig: any = {
           temperature: 0.7,
-          maxOutputTokens: 1000,
+          maxOutputTokens: 600,
           topP: 0.85
         };
-        if (modelo === "gemini-3.6-flash" || modelo === "gemini-3.5-flash") {
-          genConfig.thinkingConfig = { thinkingBudget: 0 };
-        }
 
         const response = await fetch(url, {
           method: "POST",
@@ -146,16 +151,19 @@ export async function gerarRespostaGemini(
         if (response.ok) {
           const json = await response.json();
           const candidateParts = json?.candidates?.[0]?.content?.parts;
-          const texto = candidateParts?.find((p: any) => p.text)?.text?.trim() || candidateParts?.[0]?.text?.trim();
+          const texto = candidateParts?.map((p: any) => p.text).filter(Boolean).join(" ").trim();
           if (texto) {
             respostaTexto = texto;
+            const tempo = Date.now() - inicioTentativa;
+            console.log(`[GEMINI IA] Resposta gerada via ${modelo} (${tempo}ms) para ${remoteJid}: "${texto.slice(0, 60)}..."`);
             break;
           }
         } else {
-          console.warn(`[GEMINI IA] Modelo ${modelo} retornou status ${response.status}. Tentando próximo...`);
+          const errText = await response.text().catch(() => "");
+          console.warn(`[GEMINI IA] Modelo ${modelo} retornou status ${response.status}: ${errText.slice(0, 120)}. Tentando próximo...`);
         }
       } catch (err: any) {
-        console.warn(`[GEMINI IA] Erro ao consultar modelo ${modelo}: ${err.message}`);
+        console.warn(`[GEMINI IA] Falha ou timeout no modelo ${modelo} (${Date.now() - inicioTentativa}ms): ${err.message}. Tentando próximo...`);
       }
     }
 
@@ -191,20 +199,27 @@ export async function testarChaveGemini(apiKey: string): Promise<{ success: bool
       return { success: false, erro: "Chave de API inválida ou muito curta." };
     }
 
-    const modelos = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-3.5-flash-lite"];
+    const modelos = [
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-lite-latest",
+      "gemini-3.6-flash",
+      "gemini-3.5-flash"
+    ];
     let ultimoErro = "";
 
     for (const modelo of modelos) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${keyLimpa}`;
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 12000);
+        const timeout = setTimeout(() => controller.abort(), 6000);
 
         const response = await fetch(url, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }]
+            contents: [{ role: "user", parts: [{ text: "Diga apenas: OK" }] }],
+            generationConfig: { maxOutputTokens: 20 }
           }),
           signal: controller.signal
         });

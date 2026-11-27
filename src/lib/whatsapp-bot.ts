@@ -1797,7 +1797,15 @@ async function processarMensagemRobo(
     tLimpo.includes("booksy") || 
     tLimpo.includes("corte")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Para agendar seu horário com total comodidade e sem fila, você pode escolher o serviço, barbeiro e horário diretamente pelo nosso Booksy:\n👉 *${linkBooksy}*\n\nSe precisar de mais alguma informação, estou à disposição!`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Para agendar seu horário com total comodidade e sem fila, você pode escolher o serviço, barbeiro e horário diretamente pelo nosso Booksy:\n👉 *${linkBooksy}*\n\nSe precisar de mais alguma informação, estou à sua disposição! ✨`;
+  } else if (
+    tLimpo.includes("barbeiro") ||
+    tLimpo.includes("barbeiros") ||
+    tLimpo.includes("falar com") ||
+    tLimpo.includes("atendente") ||
+    tLimpo.includes("equipe")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Nossos barbeiros estão à disposição. Para escolher o profissional de sua preferência e agendar seu horário sem fila, você pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*\n\nSe preferir deixar um recado para algum barbeiro específico, é só me dizer! 💈`;
   } else if (
     tLimpo.includes("preco") || 
     tLimpo.includes("preço") || 
@@ -1807,7 +1815,7 @@ async function processarMensagemRobo(
     tLimpo.includes("servico") || 
     tLimpo.includes("serviço")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nossos serviços incluem cortes, barba e procedimentos completos. Você pode consultar todos os valores oficiais e agendar diretamente no nosso Booksy:\n👉 *${linkBooksy}*\n\nSe desejar saber o valor de um procedimento específico, é só me dizer!`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Nossos serviços incluem cortes, barba e procedimentos completos. Você pode consultar todos os valores oficiais e agendar diretamente no nosso Booksy:\n👉 *${linkBooksy}*\n\nSe desejar saber o valor de um procedimento específico, é só me dizer!`;
   } else if (
     tLimpo.includes("onde") || 
     tLimpo.includes("endereco") || 
@@ -1817,7 +1825,7 @@ async function processarMensagemRobo(
     tLimpo.includes("como chegar") || 
     tLimpo.includes("rua")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Ficamos localizados em:\n📍 *${endereco}*\n\n${maps ? "🗺️ Link do mapa: " + maps + "\n\n" : ""}⏰ Horário de atendimento: ${horario}. Será um prazer receber você!`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Ficamos localizados em:\n📍 *${endereco}*\n\n${maps ? "🗺️ Link do mapa: " + maps + "\n\n" : ""}⏰ Horário de atendimento: ${horario}. Será um prazer receber você!`;
   } else if (
     tLimpo.includes("pix") || 
     tLimpo.includes("pagamento") || 
@@ -1825,16 +1833,27 @@ async function processarMensagemRobo(
     tLimpo.includes("cartao") || 
     tLimpo.includes("cartão")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nossa chave Pix oficial para pagamentos é: *${chavePix}*. Também aceitamos cartões de débito, crédito e dinheiro no local.`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Nossa chave Pix oficial para pagamentos é: *${chavePix}*. Também aceitamos cartões de débito, crédito e dinheiro no local.`;
   } else if (
     tLimpo.includes("plano") || 
     tLimpo.includes("mensalista") || 
     tLimpo.includes("assinatura") || 
     tLimpo.includes("clube")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA da *${barbearia}*. Nós temos planos mensalistas exclusivos para você manter o corte sempre impecável com desconto. Para conhecer as opções ou assinar, nossa equipe está à disposição para te apresentar todos os detalhes!`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Nós temos planos mensalistas exclusivos para você manter o corte sempre impecável com desconto. Para conhecer as opções ou assinar, nossa equipe está à disposição para te apresentar todos os detalhes! ✂️`;
+  } else if (
+    tLimpo.includes("oi") ||
+    tLimpo.includes("olá") ||
+    tLimpo.includes("ola") ||
+    tLimpo.includes("bom dia") ||
+    tLimpo.includes("boa tarde") ||
+    tLimpo.includes("boa noite") ||
+    tLimpo.includes("tudo bem") ||
+    tLimpo.includes("td bem")
+  ) {
+    respostaContingencia = `Olá, *${nomeCliente}*! Tudo ótimo por aqui, e com você? É um imenso prazer falar com você! Como posso te ajudar hoje na *${barbearia}*?`;
   } else {
-    respostaContingencia = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*, e é um imenso prazer falar com você! Como posso te ajudar no dia de hoje? Caso deseje agendar um horário sem fila, você pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
+    respostaContingencia = `Olá, *${nomeCliente}*! Como posso te ajudar hoje na *${barbearia}*? Se desejar agendar um horário sem fila, você pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
   }
 
   await enviarRespostaHumanizada(respostaContingencia);
