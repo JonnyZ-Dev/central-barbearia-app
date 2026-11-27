@@ -1621,13 +1621,13 @@ async function processarMensagemRobo(
   }
 
   // =========================================================================
-  // 3. SE O CLIENTE ENVIOU IMAGEM / COMPROVANTE (sem texto de comando):
-  // Avisa com a persona educada da Elaine.IA e pausa para a equipe conferir
+  // 3. SE O CLIENTE ENVIOU IMAGEM / FOTO / COMPROVANTE (sem texto):
+  // Informa com transparência que é assistente de texto e salva para os barbeiros
   // =========================================================================
   if (extraInfo?.ehImagem && !texto) {
-    const respostaImagem = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Recebi sua imagem / comprovante! 📸\n\nJá encaminhei para nossa equipe conferir e confirmar para você em instantes. Tenha um excelente dia! 💈`;
+    const respostaImagem = `Recebi sua imagem / foto, *${nomeCliente}*! 📸\n\nComo sou uma assistente virtual de texto, ainda não consigo visualizar fotos diretamente, mas já deixei salvo para os nossos barbeiros darem uma olhada! Se quiser garantir o seu horário para fazer esse estilo com a gente:\n👉 *${linkBooksy}* 💈`;
     await enviarRespostaHumanizada(respostaImagem);
-    ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou imagem / comprovante", extraInfo?.pushName, numeroLimpo);
+    ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou imagem / foto", extraInfo?.pushName, numeroLimpo);
     return;
   }
 
