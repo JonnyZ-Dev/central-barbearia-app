@@ -277,7 +277,7 @@ function initSchema(db: DatabaseSync) {
     const DEFAULT_KEY = Buffer.from("QVEuQWI4Uk42THBHMEdIM2ZNNFlyNDhscU5mTW10SVpDMUF6SGx4QjBXR2wwTWJfV3ZMWlE=", "base64").toString("utf-8");
     db.exec(`UPDATE configuracoes SET gemini_ativo = 1 WHERE id = 'default';`);
     db.exec(`UPDATE configuracoes SET gemini_api_key = '${DEFAULT_KEY}' WHERE id = 'default' AND (gemini_api_key IS NULL OR TRIM(gemini_api_key) = '' OR gemini_api_key LIKE 'AIzaSy%' OR gemini_api_key NOT LIKE 'AQ.%');`);
-    db.exec(`UPDATE configuracoes SET gemini_prompt_personalizado = NULL WHERE id = 'default' AND gemini_prompt_personalizado LIKE '%1. APRESENTAÇÃO ÚNICA%';`);
+    db.exec(`UPDATE configuracoes SET gemini_prompt_personalizado = NULL WHERE id = 'default';`);
   } catch (e) {}
 
   // Criação de Índices de Ultra Performance (Consultas sub-milissegundo com 0% uso de CPU)
