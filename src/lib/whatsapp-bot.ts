@@ -1851,7 +1851,17 @@ async function processarMensagemRobo(
     tLimpo.includes("tudo bem") ||
     tLimpo.includes("td bem")
   ) {
-    respostaContingencia = `Olá, *${nomeCliente}*! Tudo ótimo por aqui, e com você? Como posso te ajudar hoje na *${barbearia}*?`;
+    if (tLimpo.includes("boa noite")) {
+      respostaContingencia = `Boa noite, *${nomeCliente}*! Tudo ótimo por aqui. Em que posso te ajudar hoje na *${barbearia}*?`;
+    } else if (tLimpo.includes("boa tarde")) {
+      respostaContingencia = `Boa tarde, *${nomeCliente}*! Tudo bem? Como posso te ajudar hoje na *${barbearia}*?`;
+    } else if (tLimpo.includes("bom dia")) {
+      respostaContingencia = `Bom dia, *${nomeCliente}*! Tudo ótimo por aqui. Como posso te ajudar hoje na *${barbearia}*?`;
+    } else if (tLimpo === "tudo bem" || tLimpo === "tudo bem ?" || tLimpo === "td bem" || tLimpo === "td bem ?") {
+      respostaContingencia = `Tudo ótimo por aqui, *${nomeCliente}*! Em que posso te ajudar hoje na *${barbearia}*?`;
+    } else {
+      respostaContingencia = `Olá, *${nomeCliente}*! Tudo ótimo por aqui, e com você? Como posso te ajudar hoje na *${barbearia}*?`;
+    }
   } else {
     respostaContingencia = `Olá, *${nomeCliente}*! Como posso te ajudar hoje na *${barbearia}*?`;
   }
