@@ -565,7 +565,22 @@ export default function Dashboard() {
       const res = await fetch(`/api/whatsapp/conversas/mensagens?${params.toString()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.mensagens) && json.mensagens.length > 0) {
-        setMensagensChat(json.mensagens);
+        // Deduplicação defensiva no cliente
+        const unicas: any[] = [];
+        for (const m of json.mensagens) {
+          const txt = (m.texto || "").trim().toLowerCase();
+          const anterior = unicas[unicas.length - 1];
+          if (anterior && anterior.remetente === m.remetente && (anterior.texto || "").trim().toLowerCase() === txt) {
+            continue;
+          }
+          const ehDup = unicas.some(ant => 
+            ant.remetente === m.remetente && 
+            (ant.texto || "").trim().toLowerCase() === txt && 
+            (m.id === ant.id || Math.abs(Number(m.criado_em) - Number(ant.criado_em)) < 10800000)
+          );
+          if (!ehDup) unicas.push(m);
+        }
+        setMensagensChat(unicas);
       } else {
         // Fallback se ainda não houver histórico gravado na tabela nova
         if (conv.ultima_mensagem) {
@@ -601,7 +616,21 @@ export default function Dashboard() {
       const res = await fetch(`/api/whatsapp/conversas/mensagens?${params.toString()}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.mensagens)) {
-        setMensagensChat(json.mensagens);
+        const unicas: any[] = [];
+        for (const m of json.mensagens) {
+          const txt = (m.texto || "").trim().toLowerCase();
+          const anterior = unicas[unicas.length - 1];
+          if (anterior && anterior.remetente === m.remetente && (anterior.texto || "").trim().toLowerCase() === txt) {
+            continue;
+          }
+          const ehDup = unicas.some(ant => 
+            ant.remetente === m.remetente && 
+            (ant.texto || "").trim().toLowerCase() === txt && 
+            (m.id === ant.id || Math.abs(Number(m.criado_em) - Number(ant.criado_em)) < 10800000)
+          );
+          if (!ehDup) unicas.push(m);
+        }
+        setMensagensChat(unicas);
       }
     } catch (e) {}
   };

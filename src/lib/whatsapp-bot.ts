@@ -91,10 +91,11 @@ function salvarMensagemNoCache(id: string, remoteJid: string | undefined, messag
 
     try {
       const db = getDb();
+      const tsReal = Number(rawMsg?.messageTimestamp) ? Number(rawMsg.messageTimestamp) * 1000 : Date.now();
       db.prepare(`
         INSERT OR REPLACE INTO bot_mensagens_cache (id, remote_jid, message_json, criado_em)
         VALUES (?, ?, ?, ?)
-      `).run(id, remoteJid || "", JSON.stringify(rawMsg), Date.now());
+      `).run(id, remoteJid || "", JSON.stringify(rawMsg), tsReal);
 
       if (Math.random() < 0.02) {
         db.prepare(`
@@ -271,20 +272,40 @@ export function registrarMensagemNoHistorico(
   nome: string,
   texto: string,
   tipo: "texto" | "audio" | "imagem" | "video" | "documento" = "texto",
-  timestamp?: number
+  timestamp?: number,
+  msgId?: string
 ) {
   try {
     if (!remoteJid || !texto) return;
     const db = getDb();
     const agora = timestamp || Date.now();
-    const id = `msg_${agora}_${Math.random().toString(36).slice(2, 8)}`;
-    const dataHora = new Date(agora).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    const textoLimpo = texto.trim();
+    if (!textoLimpo) return;
+
     const numLimpo = (numero || remoteJid).replace(/\D/g, "");
+    const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
+    const id = msgId || `msg_${agora}_${Math.random().toString(36).slice(2, 8)}`;
+
+    // Prevenção de duplicatas: não insere se já existir mensagem com mesmo remetente e mesmo texto em até 3 horas
+    const existente: any = db.prepare(`
+      SELECT id FROM historico_mensagens 
+      WHERE (remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%'))
+        AND remetente = ? 
+        AND TRIM(texto) = ?
+        AND (id = ? OR ABS(criado_em - ?) < 10800000)
+      LIMIT 1
+    `).get(remoteJid, numLimpo, ultimos8, ultimos8, remetente, textoLimpo, id, agora);
+
+    if (existente) {
+      return; // Já cadastrada no histórico
+    }
+
+    const dataHora = new Date(agora).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
     db.prepare(`
-      INSERT INTO historico_mensagens (id, remote_jid, numero, remetente, nome, texto, tipo, criado_em, data_hora)
+      INSERT OR IGNORE INTO historico_mensagens (id, remote_jid, numero, remetente, nome, texto, tipo, criado_em, data_hora)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, remoteJid, numLimpo, remetente, nome || "", texto, tipo, agora, dataHora);
+    `).run(id, remoteJid, numLimpo, remetente, nome || "", textoLimpo, tipo, agora, dataHora);
   } catch (err: any) {
     console.warn("[HISTORICO MSG] Erro ao registrar mensagem:", err.message);
   }
@@ -296,6 +317,18 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
     const db = getDb();
     const numLimpo = (numero || remoteJid).replace(/\D/g, "");
     const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
+
+    // 0. Limpeza preventiva de duplicatas históricas na tabela (mesmo remetente e mesmo texto no mesmo dia)
+    try {
+      db.prepare(`
+        DELETE FROM historico_mensagens 
+        WHERE rowid NOT IN (
+          SELECT MIN(rowid) 
+          FROM historico_mensagens 
+          GROUP BY remote_jid, remetente, TRIM(texto), (criado_em / 86400000)
+        )
+      `).run();
+    } catch (e) {}
 
     const mapaMsgs = new Map<string, any>();
 
@@ -311,8 +344,7 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
     `).all(remoteJid, numLimpo, ultimos8, ultimos8, ultimos8, ultimos8) || [];
 
     for (const m of msgs) {
-      const chave = `${m.remetente}_${(m.texto || "").trim()}_${m.criado_em}`;
-      mapaMsgs.set(m.id || chave, m);
+      mapaMsgs.set(m.id, m);
     }
 
     // 2. Mescla com mensagens salvas em bot_mensagens_cache que ainda não estejam no histórico
@@ -329,39 +361,40 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
           const parsed = JSON.parse(row.message_json);
           const { texto, tipo } = extrairTextoEInfoMensagem(parsed);
           if (texto) {
-            // Em bot_mensagens_cache, se não for fromMe explícito, é CLIENTE
             const remetente = (parsed?.key?.fromMe || parsed?.fromMe) ? "HUMANO" : "CLIENTE";
-            
-            // Deduplicação: verifica se já temos mensagem idêntica em até 2 minutos
-            let jaExiste = false;
-            for (const existente of mapaMsgs.values()) {
-              if (existente.texto === texto && Math.abs(Number(existente.criado_em) - Number(row.criado_em)) < 120000) {
-                jaExiste = true;
-                break;
+            const tsMsg = Number(parsed?.messageTimestamp) ? Number(parsed.messageTimestamp) * 1000 : Number(row.criado_em);
+            const textoLimpo = texto.trim();
+
+            let jaExiste = mapaMsgs.has(row.id) || (parsed?.key?.id && mapaMsgs.has(parsed.key.id));
+            if (!jaExiste) {
+              for (const existente of mapaMsgs.values()) {
+                if (existente.remetente === remetente && (existente.texto || "").trim() === textoLimpo && Math.abs(Number(existente.criado_em) - tsMsg) < 10800000) {
+                  jaExiste = true;
+                  break;
+                }
               }
             }
 
             if (!jaExiste) {
-              const dataHora = new Date(row.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              const dataHora = new Date(tsMsg).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
               const item = {
-                id: `cache_${row.id}`,
+                id: parsed?.key?.id || `cache_${row.id}`,
                 remote_jid: remoteJid,
                 numero: numLimpo,
                 remetente,
                 nome: remetente === "HUMANO" ? "Barbeiro" : (parsed?.pushName || "Cliente"),
-                texto,
+                texto: textoLimpo,
                 tipo,
-                criado_em: row.criado_em,
+                criado_em: tsMsg,
                 data_hora: dataHora
               };
               mapaMsgs.set(item.id, item);
 
-              // Grava também no historico_mensagens para persistência permanente!
               try {
                 db.prepare(`
                   INSERT OR IGNORE INTO historico_mensagens (id, remote_jid, numero, remetente, nome, texto, tipo, criado_em, data_hora)
                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                `).run(item.id, remoteJid, numLimpo, remetente, item.nome, texto, tipo, row.criado_em, dataHora);
+                `).run(item.id, remoteJid, numLimpo, remetente, item.nome, textoLimpo, tipo, tsMsg, dataHora);
               } catch (e) {}
             }
           }
@@ -373,9 +406,10 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
     try {
       const conv: any = db.prepare("SELECT * FROM conversas_whatsapp WHERE remote_jid = ? OR numero = ?").get(remoteJid, numLimpo);
       if (conv && conv.ultima_mensagem) {
+        const textoConv = conv.ultima_mensagem.trim();
         let jaExiste = false;
         for (const existente of mapaMsgs.values()) {
-          if (existente.texto === conv.ultima_mensagem) {
+          if ((existente.texto || "").trim() === textoConv) {
             jaExiste = true;
             break;
           }
@@ -388,8 +422,8 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
             numero: numLimpo,
             remetente: conv.ultimo_remetente || "CLIENTE",
             nome: conv.nome || "Cliente",
-            texto: conv.ultima_mensagem,
-            tipo: conv.ultima_mensagem.includes("🎙️") ? "audio" : (conv.ultima_mensagem.includes("📷") ? "imagem" : "texto"),
+            texto: textoConv,
+            tipo: textoConv.includes("🎙️") ? "audio" : (textoConv.includes("📷") ? "imagem" : "texto"),
             criado_em: conv.atualizado_em || Date.now(),
             data_hora: dataHora
           });
@@ -397,10 +431,28 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
       }
     } catch (e) {}
 
-    // Retorna ordenado em ordem cronológica (criado_em ASC)
+    // 4. Ordena em ordem cronológica (criado_em ASC) e remove qualquer duplicata residual
     const todas = Array.from(mapaMsgs.values());
     todas.sort((a, b) => (Number(a.criado_em) || 0) - (Number(b.criado_em) || 0));
-    return todas;
+
+    const listaFinal: any[] = [];
+    for (const m of todas) {
+      const txt = (m.texto || "").trim().toLowerCase();
+      const anterior = listaFinal[listaFinal.length - 1];
+      if (anterior && anterior.remetente === m.remetente && (anterior.texto || "").trim().toLowerCase() === txt) {
+        continue;
+      }
+      const ehDuplicata = listaFinal.some(ant => 
+        ant.remetente === m.remetente && 
+        (ant.texto || "").trim().toLowerCase() === txt && 
+        (m.id === ant.id || Math.abs(Number(m.criado_em) - Number(ant.criado_em)) < 10800000)
+      );
+      if (!ehDuplicata) {
+        listaFinal.push(m);
+      }
+    }
+
+    return listaFinal;
   } catch (err: any) {
     console.error("[HISTORICO MSG] Erro ao buscar histórico:", err.message);
     return [];
@@ -432,7 +484,9 @@ async function enviarMensagemDoBot(jid: string, content: any) {
         "IA",
         "Elaine.IA",
         textoMsg,
-        "texto"
+        "texto",
+        Date.now(),
+        sent.key.id
       );
     }
   }
@@ -1300,7 +1354,8 @@ export async function iniciarWhatsAppBot() {
             nome,
             texto,
             tipo,
-            timestampMsg
+            timestampMsg,
+            msg.key?.id
           );
         }
       } catch (e) {}
@@ -1344,7 +1399,8 @@ export async function iniciarWhatsAppBot() {
                 (msg as any)?.pushName || "Barbeiro",
                 textoAtendente,
                 tipoMsgAtendente,
-                timestampMsg
+                timestampMsg,
+                msg.key?.id
               );
             }
 
@@ -1444,7 +1500,8 @@ export async function iniciarWhatsAppBot() {
             nomeCliente,
             previewMsg,
             tipoMsgCliente,
-            timestampMsg
+            timestampMsg,
+            msg.key?.id
           );
 
           // Se for mensagem antiga (> 90 segundos), NÃO dispara resposta da IA, mas ela já está salva no histórico!
