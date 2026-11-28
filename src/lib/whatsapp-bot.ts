@@ -149,6 +149,37 @@ function ehComandoReativarBot(texto: string): boolean {
   return t === "/ia" || t === "/retomar" || t === "/liberar" || t === "#ativar" || t === "#reativar";
 }
 
+// Extrai texto limpo e tipo de qualquer formato de mensagem do Baileys (inclusive efêmeras, viewOnce, mídias)
+export function extrairTextoEInfoMensagem(msg: any): { texto: string; tipo: "texto" | "audio" | "imagem" | "video" | "documento" } {
+  if (!msg) return { texto: "", tipo: "texto" };
+
+  let m = msg.message || msg;
+  // Desembrulha mensagens aninhadas (efêmeras, viewOnce, documento com legenda)
+  while (m?.ephemeralMessage?.message || m?.viewOnceMessage?.message || m?.viewOnceMessageV2?.message || m?.documentWithCaptionMessage?.message) {
+    m = m.ephemeralMessage?.message || m.viewOnceMessage?.message || m.viewOnceMessageV2?.message || m.documentWithCaptionMessage?.message;
+  }
+
+  let tipo: "texto" | "audio" | "imagem" | "video" | "documento" = "texto";
+  if (m?.audioMessage) tipo = "audio";
+  else if (m?.imageMessage) tipo = "imagem";
+  else if (m?.videoMessage) tipo = "video";
+  else if (m?.documentMessage) tipo = "documento";
+
+  const texto = (
+    m?.conversation ||
+    m?.extendedTextMessage?.text ||
+    m?.imageMessage?.caption ||
+    m?.videoMessage?.caption ||
+    m?.documentMessage?.caption ||
+    (m?.audioMessage ? "🎙️ [Áudio do WhatsApp]" : "") ||
+    (m?.imageMessage ? "📷 [Imagem / Foto]" : "") ||
+    (m?.videoMessage ? "🎥 [Vídeo]" : "") ||
+    ""
+  ).trim();
+
+  return { texto, tipo };
+}
+
 // Registra cada mensagem individual (do cliente, da IA ou do barbeiro) na tabela historico_mensagens
 export function registrarMensagemNoHistorico(
   remoteJid: string,
@@ -183,74 +214,110 @@ export function buscarHistoricoMensagens(remoteJid: string, numero?: string) {
     const numLimpo = (numero || remoteJid).replace(/\D/g, "");
     const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
 
+    const mapaMsgs = new Map<string, any>();
+
     // 1. Consulta mensagens gravadas na tabela historico_mensagens
     const msgs: any[] = db.prepare(`
       SELECT * FROM historico_mensagens 
-      WHERE remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%')
+      WHERE remote_jid = ? 
+         OR numero = ? 
+         OR (? != '' AND numero LIKE '%' || ? || '%')
+         OR (? != '' AND remote_jid LIKE '%' || ? || '%')
       ORDER BY criado_em ASC
-      LIMIT 150
-    `).all(remoteJid, numLimpo, ultimos8, ultimos8) || [];
+      LIMIT 200
+    `).all(remoteJid, numLimpo, ultimos8, ultimos8, ultimos8, ultimos8) || [];
 
-    if (msgs.length > 0) {
-      return msgs;
+    for (const m of msgs) {
+      const chave = `${m.remetente}_${(m.texto || "").trim()}_${m.criado_em}`;
+      mapaMsgs.set(m.id || chave, m);
     }
 
-    // 2. Se a tabela nova ainda não tem histórico gravado para este chat, reconstrói pelo bot_mensagens_cache
-    const cacheRows: any[] = db.prepare(`
-      SELECT * FROM bot_mensagens_cache 
-      WHERE remote_jid = ? OR remote_jid LIKE ?
-      ORDER BY criado_em ASC
-      LIMIT 50
-    `).all(remoteJid, `%${ultimos8}%`) || [];
+    // 2. Mescla com mensagens salvas em bot_mensagens_cache que ainda não estejam no histórico
+    try {
+      const cacheRows: any[] = db.prepare(`
+        SELECT * FROM bot_mensagens_cache 
+        WHERE remote_jid = ? OR remote_jid LIKE ?
+        ORDER BY criado_em ASC
+        LIMIT 100
+      `).all(remoteJid, `%${ultimos8}%`) || [];
 
-    if (cacheRows.length > 0) {
-      const reconstruidas: any[] = [];
       for (const row of cacheRows) {
         try {
-          const m = JSON.parse(row.message_json);
-          const texto = m.conversation || 
-                        m.extendedTextMessage?.text || 
-                        (m.imageMessage ? (m.imageMessage.caption ? `📷 ${m.imageMessage.caption}` : "📷 [Foto / Imagem]") : "") ||
-                        (m.audioMessage ? "🎙️ [Áudio do WhatsApp]" : "") ||
-                        (m.videoMessage ? "🎥 [Vídeo]" : "") ||
-                        "";
+          const parsed = JSON.parse(row.message_json);
+          const { texto, tipo } = extrairTextoEInfoMensagem(parsed);
           if (texto) {
-            const dataHora = new Date(row.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-            reconstruidas.push({
-              id: row.id,
-              remote_jid: remoteJid,
-              numero: numLimpo,
-              remetente: m.fromMe ? "HUMANO" : "CLIENTE",
-              nome: m.pushName || "",
-              texto,
-              tipo: m.imageMessage ? "imagem" : (m.audioMessage ? "audio" : "texto"),
-              criado_em: row.criado_em,
-              data_hora: dataHora
-            });
+            // Em bot_mensagens_cache, se não for fromMe explícito, é CLIENTE
+            const remetente = (parsed?.key?.fromMe || parsed?.fromMe) ? "HUMANO" : "CLIENTE";
+            
+            // Deduplicação: verifica se já temos mensagem idêntica em até 2 minutos
+            let jaExiste = false;
+            for (const existente of mapaMsgs.values()) {
+              if (existente.texto === texto && Math.abs(Number(existente.criado_em) - Number(row.criado_em)) < 120000) {
+                jaExiste = true;
+                break;
+              }
+            }
+
+            if (!jaExiste) {
+              const dataHora = new Date(row.criado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+              const item = {
+                id: `cache_${row.id}`,
+                remote_jid: remoteJid,
+                numero: numLimpo,
+                remetente,
+                nome: remetente === "HUMANO" ? "Barbeiro" : (parsed?.pushName || "Cliente"),
+                texto,
+                tipo,
+                criado_em: row.criado_em,
+                data_hora: dataHora
+              };
+              mapaMsgs.set(item.id, item);
+
+              // Grava também no historico_mensagens para persistência permanente!
+              try {
+                db.prepare(`
+                  INSERT OR IGNORE INTO historico_mensagens (id, remote_jid, numero, remetente, nome, texto, tipo, criado_em, data_hora)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `).run(item.id, remoteJid, numLimpo, remetente, item.nome, texto, tipo, row.criado_em, dataHora);
+              } catch (e) {}
+            }
           }
         } catch (e) {}
       }
-      if (reconstruidas.length > 0) return reconstruidas;
-    }
+    } catch (e) {}
 
-    // 3. Fallback: usa ao menos a última mensagem salva de conversas_whatsapp
-    const conv: any = db.prepare("SELECT * FROM conversas_whatsapp WHERE remote_jid = ? OR numero = ?").get(remoteJid, numLimpo);
-    if (conv && conv.ultima_mensagem) {
-      const dataHora = new Date(conv.atualizado_em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
-      return [{
-        id: `conv_${conv.atualizado_em}`,
-        remote_jid: remoteJid,
-        numero: numLimpo,
-        remetente: conv.ultimo_remetente || "CLIENTE",
-        nome: conv.nome || "",
-        texto: conv.ultima_mensagem,
-        tipo: conv.ultima_mensagem.includes("🎙️") ? "audio" : (conv.ultima_mensagem.includes("📷") ? "imagem" : "texto"),
-        criado_em: conv.atualizado_em || Date.now(),
-        data_hora: dataHora
-      }];
-    }
+    // 3. Fallback complementar de conversas_whatsapp
+    try {
+      const conv: any = db.prepare("SELECT * FROM conversas_whatsapp WHERE remote_jid = ? OR numero = ?").get(remoteJid, numLimpo);
+      if (conv && conv.ultima_mensagem) {
+        let jaExiste = false;
+        for (const existente of mapaMsgs.values()) {
+          if (existente.texto === conv.ultima_mensagem) {
+            jaExiste = true;
+            break;
+          }
+        }
+        if (!jaExiste) {
+          const dataHora = new Date(conv.atualizado_em || Date.now()).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+          mapaMsgs.set(`conv_${conv.atualizado_em}`, {
+            id: `conv_${conv.atualizado_em}`,
+            remote_jid: remoteJid,
+            numero: numLimpo,
+            remetente: conv.ultimo_remetente || "CLIENTE",
+            nome: conv.nome || "Cliente",
+            texto: conv.ultima_mensagem,
+            tipo: conv.ultima_mensagem.includes("🎙️") ? "audio" : (conv.ultima_mensagem.includes("📷") ? "imagem" : "texto"),
+            criado_em: conv.atualizado_em || Date.now(),
+            data_hora: dataHora
+          });
+        }
+      }
+    } catch (e) {}
 
-    return [];
+    // Retorna ordenado em ordem cronológica (criado_em ASC)
+    const todas = Array.from(mapaMsgs.values());
+    todas.sort((a, b) => (Number(a.criado_em) || 0) - (Number(b.criado_em) || 0));
+    return todas;
   } catch (err: any) {
     console.error("[HISTORICO MSG] Erro ao buscar histórico:", err.message);
     return [];
@@ -1031,6 +1098,36 @@ export async function iniciarWhatsAppBot() {
       } catch (e) {}
     });
 
+    // Sincronização inicial de histórico recente enviada pelo WhatsApp (Baileys)
+    sock.ev.on("messaging-history.set", ({ messages }: any) => {
+      try {
+        if (!messages || !Array.isArray(messages)) return;
+        for (const msg of messages) {
+          if (!msg || !msg.message) continue;
+          const remoteJid = msg.key?.remoteJid;
+          if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
+
+          const telLimpo = remoteJid.replace(/[^0-9]/g, "");
+          const timestampMsg = Number(msg.messageTimestamp) * 1000 || Date.now();
+          const { texto, tipo } = extrairTextoEInfoMensagem(msg);
+          if (!texto) continue;
+
+          const remetente = msg.key?.fromMe ? "HUMANO" : "CLIENTE";
+          const nome = msg.key?.fromMe ? "Barbeiro" : (msg.pushName || "Cliente");
+
+          registrarMensagemNoHistorico(
+            remoteJid,
+            telLimpo,
+            remetente,
+            nome,
+            texto,
+            tipo,
+            timestampMsg
+          );
+        }
+      } catch (e) {}
+    });
+
     sock.ev.on("messages.upsert", async (m: any) => {
       // 1. Processar mensagens recebidas (notify) E mensagens enviadas pelo atendente/barbeiro no celular (append)
       if (!m.messages || m.messages.length === 0) return;
@@ -1043,8 +1140,11 @@ export async function iniciarWhatsAppBot() {
           const remoteJid = msg.key.remoteJid;
           if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid === "status@broadcast") continue;
 
-          // 1. DETECÇÃO INTELIGENTE DE INTERVENÇÃO HUMANA
-          // Se a mensagem partiu da barbearia (fromMe = true):
+          const telLimpo = remoteJid.replace(/[^0-9]/g, "");
+          const timestampMsg = Number(msg.messageTimestamp) * 1000 || Date.now();
+          const ehMensagemAntiga = Boolean(timestampMsg && Date.now() - timestampMsg > 90000);
+
+          // 1. DETECÇÃO INTELIGENTE DE INTERVENÇÃO HUMANA (Mensagem enviada pela própria barbearia)
           if (msg.key.fromMe) {
             const msgId = msg.key.id;
             if (msgId && mensagensEnviadasPeloRobo.has(msgId)) {
@@ -1053,23 +1153,27 @@ export async function iniciarWhatsAppBot() {
               continue;
             }
 
-            // Ignorar mensagens antigas de sincronização histórica (> 90 segundos)
-            const timestampMsg = Number(msg.messageTimestamp) * 1000;
-            if (timestampMsg && Date.now() - timestampMsg > 90000) {
-              continue;
+            // SE NÃO FOI O ROBÔ, FOI O BARBEIRO / ATENDENTE NO CELULAR OU NO WHATSAPP WEB!
+            const { texto: textoAtendente, tipo: tipoMsgAtendente } = extrairTextoEInfoMensagem(msg);
+            const textoLimpoAtendente = textoAtendente.toLowerCase();
+
+            // Grava sempre no histórico de mensagens para visualização imediata no painel
+            if (textoAtendente) {
+              registrarMensagemNoHistorico(
+                remoteJid,
+                telLimpo,
+                "HUMANO",
+                (msg as any)?.pushName || "Barbeiro",
+                textoAtendente,
+                tipoMsgAtendente,
+                timestampMsg
+              );
             }
 
-            // SE NÃO FOI O ROBÔ, FOI O BARBEIRO / ATENDENTE NO CELULAR OU NO WHATSAPP WEB!
-            const telLimpo = remoteJid.replace(/[^0-9]/g, "");
-            const textoAtendente = (
-              msg.message?.conversation ||
-              msg.message?.extendedTextMessage?.text ||
-              msg.message?.imageMessage?.caption ||
-              msg.message?.videoMessage?.caption ||
-              (msg.message?.audioMessage ? "[🎙️ Áudio enviado pelo barbeiro]" : "") ||
-              ""
-            ).trim();
-            const textoLimpoAtendente = textoAtendente.toLowerCase();
+            // Ignorar mensagens antigas de sincronização de histórico (> 90s) para não disparar pausa em mensagens velhas
+            if (ehMensagemAntiga) {
+              continue;
+            }
 
             // COMANDO OFICIAL: ASSUMIR ATENDIMENTO HUMANO (/atender)
             if (
@@ -1123,28 +1227,22 @@ export async function iniciarWhatsAppBot() {
               status: "HUMANO",
               motivoPausa: "Atendente conversando no WhatsApp"
             });
-            registrarMensagemNoHistorico(
-              remoteJid,
-              telLimpo,
-              "HUMANO",
-              (msg as any)?.pushName || "Barbeiro",
-              textoAtendente || "Mensagem enviada pelo barbeiro",
-              msg.message?.imageMessage ? "imagem" : (msg.message?.audioMessage ? "audio" : "texto"),
-              timestampMsg
-            );
             console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. IA pausada por 30 minutos sem interação.`);
             continue;
           }
 
+          // 2. MENSAGEM RECEBIDA DO CLIENTE (msg.key.fromMe = false)
           // Ignorar reações, mensagens apagadas, recibos de leitura e protocolos
           if (msg.message.protocolMessage || msg.message.reactionMessage) continue;
 
-          // 2. DEDUPLICAÇÃO ABSOLUTA & REGISTRO NO CACHE DE CRIPTOGRAFIA
+          // Deduplicação absoluta
           const msgId = msg.key.id;
           if (!msgId || mensagensProcessadas.has(msgId)) continue;
           mensagensProcessadas.add(msgId);
+
+          // Salva mensagem completa no cache de contingência
           if (msg.message) {
-            salvarMensagemNoCache(msgId, msg.key.remoteJid, msg.message);
+            salvarMensagemNoCache(msgId, msg.key.remoteJid, { ...msg.message, key: msg.key, pushName: msg.pushName });
           }
 
           // Manter o cache controlado para evitar acúmulo de memória
@@ -1153,42 +1251,14 @@ export async function iniciarWhatsAppBot() {
             if (first) mensagensProcessadas.delete(first);
           }
 
-          // Extrair texto da mensagem (ou verificar se é áudio / mídia)
-          const textoCliente = (
-            msg.message.conversation ||
-            msg.message.extendedTextMessage?.text ||
-            msg.message.imageMessage?.caption ||
-            msg.message.videoMessage?.caption ||
-            ""
-          ).trim().toLowerCase();
-
-          // Ignorar mensagens antigas de sincronização de histórico (> 90 segundos)
-          const timestampMsg = Number(msg.messageTimestamp) * 1000;
-          if (timestampMsg && Date.now() - timestampMsg > 90000) {
-            continue;
-          }
-
-          const telLimpo = remoteJid.replace(/[^0-9]/g, "");
+          // Extrai texto e tipo de forma robusta
+          const { texto: textoClienteOriginal, tipo: tipoMsgCliente } = extrairTextoEInfoMensagem(msg);
+          const textoCliente = textoClienteOriginal.toLowerCase();
           const nomeCliente = msg.pushName || (msg as any)?.verifiedBizName || "Cliente";
           let emAtendimentoHumano = verificarAtendimentoHumanoAtivo(remoteJid);
 
-          // 3. SE O CLIENTE ENVIAR SAUDAÇÃO OU COMANDO DE REATIVAÇÃO, REATIVA O ROBÔ IMEDIATAMENTE
-          if (emAtendimentoHumano && ehComandoReativarBot(textoCliente)) {
-            removerPausaAtendimentoHumano(remoteJid);
-            emAtendimentoHumano = false;
-            console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando/saudação ('${textoCliente}')!`);
-          }
-
-          // SEMPRE REGISTRAR A ATIVIDADE NO BANCO DE CONVERSAS (visibilidade instantânea no painel 'Conversas & IA')
-          const previewMsg = textoCliente || (msg.message?.audioMessage ? "🎙️ Áudio" : (msg.message?.imageMessage ? "📷 Imagem" : (msg.message?.videoMessage ? "🎥 Vídeo" : "Mensagem")));
-          registrarAtividadeConversa(remoteJid, {
-            numero: telLimpo,
-            nome: nomeCliente,
-            ultimaMensagem: previewMsg,
-            ultimoRemetente: "CLIENTE",
-            status: emAtendimentoHumano ? "HUMANO" : "IA"
-          });
-          const tipoMsgCliente = msg.message?.audioMessage ? "audio" : (msg.message?.imageMessage ? "imagem" : "texto");
+          // SEMPRE GRAVAR NO HISTÓRICO DE MENSAGENS PARA O POPUP DO PAINEL EXIBIR O DIÁLOGO COMPLETO!
+          const previewMsg = textoClienteOriginal || (tipoMsgCliente === "audio" ? "🎙️ Áudio" : (tipoMsgCliente === "imagem" ? "📷 Imagem" : "Mensagem"));
           registrarMensagemNoHistorico(
             remoteJid,
             telLimpo,
@@ -1198,6 +1268,27 @@ export async function iniciarWhatsAppBot() {
             tipoMsgCliente,
             timestampMsg
           );
+
+          // Se for mensagem antiga (> 90 segundos), NÃO dispara resposta da IA, mas ela já está salva no histórico!
+          if (ehMensagemAntiga) {
+            continue;
+          }
+
+          // 3. SE O CLIENTE ENVIAR SAUDAÇÃO OU COMANDO DE REATIVAÇÃO, REATIVA O ROBÔ IMEDIATAMENTE
+          if (emAtendimentoHumano && ehComandoReativarBot(textoCliente)) {
+            removerPausaAtendimentoHumano(remoteJid);
+            emAtendimentoHumano = false;
+            console.log(`[ROBÔ REATIVADO] Conversa com ${remoteJid} reativada por comando/saudação ('${textoCliente}')!`);
+          }
+
+          // Atualiza lista de conversas ativas no painel
+          registrarAtividadeConversa(remoteJid, {
+            numero: telLimpo,
+            nome: nomeCliente,
+            ultimaMensagem: previewMsg,
+            ultimoRemetente: "CLIENTE",
+            status: emAtendimentoHumano ? "HUMANO" : "IA"
+          });
 
           // VERIFICAÇÃO DE PAUSA GLOBAL DO ROBÔ (Pausado no painel)
           if (isRoboPausado()) {
