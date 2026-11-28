@@ -237,6 +237,240 @@ export async function gerarRespostaGemini(
   }
 }
 
+// Função especializada para transcrever áudio recebido do WhatsApp via modelos do Gemini
+export async function transcreverAudioComGemini(
+  audioBuffer: Buffer,
+  mimeType: string = "audio/ogg"
+): Promise<string | null> {
+  try {
+    const db = getDb();
+    const config: any = db.prepare("SELECT gemini_api_key, gemini_ativo FROM configuracoes WHERE id = 'default'").get() || {};
+
+    const apiKey = obterApiKeyValida(config.gemini_api_key);
+    const ativo = config.gemini_ativo !== undefined ? Boolean(config.gemini_ativo) : true;
+
+    if (!apiKey || !ativo) {
+      return null;
+    }
+
+    const base64Audio = audioBuffer.toString("base64");
+    const cleanMime = mimeType.split(";")[0].trim() || "audio/ogg";
+
+    // 1. Tenta primeiro o modelo ultra rápido especializado em transcrição: gemini-3.5-transcribe
+    try {
+      const urlTranscribe = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-transcribe:generateContent?key=${apiKey}`;
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+
+      const resp = await fetch(urlTranscribe, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  inline_data: {
+                    mime_type: cleanMime,
+                    data: base64Audio
+                  }
+                }
+              ]
+            }
+          ]
+        }),
+        signal: ctrl.signal
+      });
+
+      clearTimeout(t);
+
+      if (resp.ok) {
+        const json = await resp.json();
+        const candidateParts = json?.candidates?.[0]?.content?.parts;
+        const texto = candidateParts?.map((p: any) => p.text).filter(Boolean).join(" ").trim();
+        if (texto && texto.length > 0) {
+          console.log(`[GEMINI TRANSCRIÇÃO] Áudio transcrito com sucesso via gemini-3.5-transcribe: "${texto}"`);
+          return texto;
+        }
+      }
+    } catch (e: any) {
+      console.warn(`[GEMINI TRANSCRIÇÃO] gemini-3.5-transcribe falhou ou timeout: ${e.message}. Tentando modelos multimodais...`);
+    }
+
+    // 2. Fallback para modelos multimodais com instrução estrita de transcrição
+    const modelosFallback = [
+      "gemini-3.5-flash",
+      "gemini-3-flash-preview",
+      "gemini-flash-lite-latest",
+      "gemini-3.1-flash-lite-preview"
+    ];
+
+    for (const modelo of modelosFallback) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    inline_data: {
+                      mime_type: cleanMime,
+                      data: base64Audio
+                    }
+                  },
+                  {
+                    text: "Transcreva fielmente e exatamente o que foi dito neste áudio em português do Brasil. Se for inaudível, silêncio ou ruído sem voz, retorne apenas [silêncio]. Não inclua introduções, explicações ou notas, apenas o texto falado."
+                  }
+                ]
+              }
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 300
+            }
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const json = await response.json();
+          const candidateParts = json?.candidates?.[0]?.content?.parts;
+          const texto = candidateParts?.map((p: any) => p.text).filter(Boolean).join(" ").trim();
+          if (texto && texto !== "[silêncio]" && !texto.toLowerCase().includes("inteligência artificial")) {
+            console.log(`[GEMINI TRANSCRIÇÃO] Áudio transcrito via ${modelo}: "${texto}"`);
+            return texto;
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[GEMINI TRANSCRIÇÃO] Modelo ${modelo} falhou: ${e.message}`);
+      }
+    }
+
+    return null;
+  } catch (err: any) {
+    console.error("[GEMINI TRANSCRIÇÃO] Erro geral ao transcrever áudio:", err.message);
+    return null;
+  }
+}
+
+// Função multimodal para ouvir áudios dos clientes e responder diretamente em texto
+export async function gerarRespostaGeminiComAudio(
+  audioBuffer: Buffer,
+  mimeType: string = "audio/ogg",
+  remoteJid: string,
+  nomeCliente: string = "amigo"
+): Promise<string | null> {
+  try {
+    const db = getDb();
+    const config: any = db.prepare("SELECT gemini_api_key, gemini_ativo, gemini_prompt_personalizado, nome_barbearia FROM configuracoes WHERE id = 'default'").get() || {};
+
+    const apiKey = obterApiKeyValida(config.gemini_api_key);
+    const ativo = config.gemini_ativo !== undefined ? Boolean(config.gemini_ativo) : true;
+
+    if (!apiKey || !ativo) {
+      return null;
+    }
+
+    const nomeBarbearia = config.nome_barbearia || "GM Barbershop";
+    const promptPersonalizado = config.gemini_prompt_personalizado || obterPromptPadraoBarbeiro(nomeBarbearia);
+    const dadosContexto = montarContextoBarbearia(db);
+
+    const systemInstruction = `${promptPersonalizado}\n\n${dadosContexto}\n\nNome do cliente com quem você está conversando: ${nomeCliente}\n\nATENÇÃO ESPECIAL: O cliente enviou um arquivo de ÁUDIO. Ouça com extrema atenção a voz e o que ele falou em português do Brasil, compreenda a dúvida ou saudação e responda em texto diretamente a ele com educação e simpatia!`;
+
+    const agora = Date.now();
+    let historico = historicoConversas.get(remoteJid) || [];
+    historico = historico.filter(m => agora - m.timestamp < 7200000);
+
+    const base64Audio = audioBuffer.toString("base64");
+    const cleanMime = mimeType.split(";")[0].trim() || "audio/ogg";
+
+    const contentsPayload = [
+      ...historico.map(h => ({ role: h.role, parts: h.parts })),
+      {
+        role: "user",
+        parts: [
+          {
+            inline_data: {
+              mime_type: cleanMime,
+              data: base64Audio
+            }
+          },
+          {
+            text: "Ouça com atenção o áudio do cliente da barbearia acima. Compreenda o que ele falou e responda em texto diretamente a ele com naturalidade, simpatia e brevidade, cumprindo as instruções da Elaine.IA."
+          }
+        ]
+      }
+    ];
+
+    const modelosAudio = [
+      "gemini-3.5-flash",
+      "gemini-3-flash-preview",
+      "gemini-flash-lite-latest",
+      "gemini-3.1-flash-lite-preview"
+    ];
+
+    let respostaTexto: string | null = null;
+
+    for (const modelo of modelosAudio) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 12000);
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemInstruction }] },
+            contents: contentsPayload,
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 600
+            }
+          }),
+          signal: controller.signal
+        });
+
+        clearTimeout(timeout);
+
+        if (response.ok) {
+          const json = await response.json();
+          const candidateParts = json?.candidates?.[0]?.content?.parts;
+          const texto = candidateParts?.map((p: any) => p.text).filter(Boolean).join(" ").trim();
+          if (texto) {
+            respostaTexto = texto;
+            console.log(`[GEMINI ÁUDIO] Áudio compreendido e respondido com sucesso via ${modelo}: "${texto.slice(0, 60)}..."`);
+            break;
+          }
+        }
+      } catch (e: any) {
+        console.warn(`[GEMINI ÁUDIO] Falha no modelo ${modelo}: ${e.message}`);
+      }
+    }
+
+    if (!respostaTexto) return null;
+
+    historico.push(
+      { role: "user", parts: [{ text: "[Áudio do cliente ouvido e processado]" }], timestamp: agora },
+      { role: "model", parts: [{ text: respostaTexto }], timestamp: agora }
+    );
+    historicoConversas.set(remoteJid, historico);
+
+    return respostaTexto;
+  } catch (err: any) {
+    console.error("[GEMINI ÁUDIO] Erro geral ao processar áudio:", err.message);
+    return null;
+  }
+}
+
 // Helper para validar a chave de API na tela de configurações
 export async function testarChaveGemini(apiKey: string): Promise<{ success: boolean; erro?: string; modelo?: string }> {
   try {

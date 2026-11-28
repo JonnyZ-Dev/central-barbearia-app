@@ -5,11 +5,17 @@ import pino from "pino";
 import makeWASocket, {
   DisconnectReason,
   useMultiFileAuthState,
-  fetchLatestBaileysVersion
+  fetchLatestBaileysVersion,
+  downloadMediaMessage
 } from "@whiskeysockets/baileys";
 import { NodeCache } from "@cacheable/node-cache";
 import { getDb } from "./db";
-import { gerarRespostaGemini, limparHistoricoChat } from "./gemini";
+import {
+  gerarRespostaGemini,
+  transcreverAudioComGemini,
+  gerarRespostaGeminiComAudio,
+  limparHistoricoChat
+} from "./gemini";
 import { iniciarAgendadorSincronizacaoBooksy } from "./booksy-sync";
 
 const AUTH_DIR = path.join(process.cwd(), "database", "auth_info_baileys");
@@ -30,6 +36,7 @@ interface MensagemBufferizada {
   pushName?: string;
   senderPn?: string;
   participantPn?: string;
+  rawMsg?: any;
 }
 
 interface ChatBufferState {
@@ -671,7 +678,8 @@ async function dispararProcessamentoChat(remoteJid: string) {
       .join(" ")
       .trim();
 
-    const temAudio = lote.some(m => m.ehAudio);
+    const msgAudio = lote.find(m => m.ehAudio);
+    const temAudio = Boolean(msgAudio);
     const temImagem = lote.some(m => m.ehImagem);
     const ultimo = lote[lote.length - 1];
 
@@ -681,7 +689,8 @@ async function dispararProcessamentoChat(remoteJid: string) {
       participantPn: ultimo?.participantPn,
       pushName: ultimo?.pushName,
       ehAudio: temAudio,
-      ehImagem: temImagem
+      ehImagem: temImagem,
+      rawMsg: msgAudio?.rawMsg || ultimo?.rawMsg
     };
 
     console.log(`[BOT PROCESSAR] Lote de ${lote.length} mensagem(ns) de ${remoteJid}: '${textoConsolidado}' (Áudio: ${temAudio}, Imagem: ${temImagem})`);
@@ -1013,7 +1022,8 @@ export async function iniciarWhatsAppBot() {
             ehImagem,
             pushName: msg.pushName || (msg as any)?.verifiedBizName,
             senderPn: (msg.key as any)?.senderPn,
-            participantPn: (msg.key as any)?.participantPn
+            participantPn: (msg.key as any)?.participantPn,
+            rawMsg: msg
           });
 
           // Se o robô já está ativamente enviando uma resposta para este chat:
@@ -1324,6 +1334,9 @@ async function processarMensagemRobo(
     pushName?: string;
     ehAudio?: boolean;
     ehImagem?: boolean;
+    rawMsg?: any;
+    audioOriginal?: boolean;
+    transcricaoAudio?: string;
   }
 ) {
   const db = getDb();
@@ -1611,13 +1624,64 @@ async function processarMensagemRobo(
 
   // =========================================================================
   // 2. SE O CLIENTE ENVIOU UM ÁUDIO:
-  // Avisa com a persona educada da Elaine.IA e pausa para a equipe ouvir
+  // Elaine.IA ouve o áudio através do Google Gemini e transcreve fielmente!
+  // Se for saudação ou dúvida, responde em texto naturalmente sem travar a conversa.
+  // Se for pedido de falar com barbeiro/atraso, encaminha para o Anti-Spam real.
+  // Se falhar o download ou compreensão, ativa o fallback humanizado.
   // =========================================================================
   if (extraInfo?.ehAudio) {
-    const respostaAudio = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Recebi seu áudio com sucesso! 🎧\n\nNossa equipe já foi notificada para ouvir com atenção e te responder em breve. Caso deseje agendar seu horário sem fila, você também pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
-    await enviarRespostaHumanizada(respostaAudio);
-    ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou áudio", extraInfo?.pushName, numeroLimpo);
-    return;
+    let audioBuffer: Buffer | null = null;
+    try {
+      if (extraInfo.rawMsg) {
+        audioBuffer = await downloadMediaMessage(
+          extraInfo.rawMsg,
+          "buffer",
+          {},
+          {
+            logger: pino({ level: "silent" }),
+            reuploadRequest: sock?.updateMediaMessage
+          }
+        ) as Buffer;
+      }
+    } catch (downloadErr: any) {
+      console.warn(`[BOT ÁUDIO] Falha ao baixar mídia de áudio de ${remoteJid}:`, downloadErr.message);
+    }
+
+    let transcricao: string | null = null;
+    if (audioBuffer && audioBuffer.length > 0) {
+      const mime = extraInfo.rawMsg?.message?.audioMessage?.mimetype || "audio/ogg; codecs=opus";
+      console.log(`[BOT ÁUDIO] Áudio baixado (${audioBuffer.length} bytes). Enviando para o Gemini transcrever...`);
+      transcricao = await transcreverAudioComGemini(audioBuffer, mime);
+    }
+
+    if (transcricao && transcricao.trim().length > 0) {
+      console.log(`[BOT ÁUDIO] Elaine.IA ouviu o áudio de ${remoteJid}: "${transcricao}"`);
+
+      // Atualiza o painel para os barbeiros verem o que o cliente falou
+      registrarAtividadeConversa(remoteJid, {
+        numero: telefoneRealCliente,
+        nome: nomeCliente,
+        ultimaMensagem: `🎙️ [Áudio]: "${transcricao}"`,
+        ultimoRemetente: "CLIENTE",
+        status: "IA"
+      });
+
+      // Prossegue o fluxo normal com o texto compreendido
+      const textoFinalCliente = texto ? `${texto} [Áudio]: ${transcricao}` : transcricao;
+      await processarMensagemRobo(remoteJid, numeroLimpo, textoFinalCliente, {
+        ...extraInfo,
+        ehAudio: false,
+        audioOriginal: true,
+        transcricaoAudio: transcricao
+      });
+      return;
+    } else {
+      console.warn(`[BOT ÁUDIO] Áudio inaudível ou falha na transcrição para ${remoteJid}. Enviando fallback.`);
+      const respostaAudio = `Olá, *${nomeCliente}*! Sou a Elaine.IA, assistente virtual da *${barbearia}*. Recebi seu áudio com sucesso! 🎧\n\nNão consegui compreender o áudio com clareza, mas nossa equipe já foi notificada para ouvir com atenção e te responder em breve. Caso deseje agendar seu horário sem fila, você também pode acessar diretamente nosso Booksy:\n👉 *${linkBooksy}*`;
+      await enviarRespostaHumanizada(respostaAudio);
+      ativarPausaAtendimentoHumano(remoteJid, "Cliente enviou áudio", extraInfo?.pushName, numeroLimpo);
+      return;
+    }
   }
 
   // =========================================================================
@@ -1769,7 +1833,10 @@ async function processarMensagemRobo(
       let alertaEnviadoComSucesso = false;
 
       if (barbeiroJid && barbeiroJid !== remoteJid) {
-        const msgAlertaBarbeiro = `🔔 *ALERTA DE CLIENTE - ${barbearia.toUpperCase()}* 💈\n\nOlá, *${barbeiroAlvo.nome}*! O cliente *${nomeCliente}* está no WhatsApp da barbearia solicitando falar com você.\n\n📱 *WhatsApp do Cliente:* https://wa.me/${telefoneRealCliente}\n💬 *Mensagem do cliente:* "${texto}"\n\n_Você pode responder o cliente diretamente no WhatsApp ou pelo Painel da Barbearia!_`;
+        const detalheMsg = extraInfo?.audioOriginal
+          ? `🎙️ [Áudio do Cliente Transcrito]: "${extraInfo.transcricaoAudio || texto}"`
+          : `"${texto}"`;
+        const msgAlertaBarbeiro = `🔔 *ALERTA DE CLIENTE - ${barbearia.toUpperCase()}* 💈\n\nOlá, *${barbeiroAlvo.nome}*! O cliente *${nomeCliente}* está no WhatsApp da barbearia solicitando falar com você.\n\n📱 *WhatsApp do Cliente:* https://wa.me/${telefoneRealCliente}\n💬 *Mensagem do cliente:* ${detalheMsg}\n\n_Você pode responder o cliente diretamente no WhatsApp ou pelo Painel da Barbearia!_`;
 
         try {
           await enviarMensagemDoBot(barbeiroJid, { text: msgAlertaBarbeiro });
