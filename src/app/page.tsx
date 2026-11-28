@@ -1909,8 +1909,8 @@ export default function Dashboard() {
                         <div className="flex items-start justify-between gap-2">
                           <div>
                             <h3 className="font-bold text-white text-base leading-snug">{m.nome}</h3>
-                            <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1">
-                              <Phone className="w-3 h-3 text-emerald-400" /> {m.whatsapp}
+                            <p className="text-xs text-zinc-400 mt-0.5 flex items-center gap-1 font-mono">
+                              <Phone className="w-3 h-3 text-emerald-400" /> {formatarTelefoneBR(m.whatsapp)}
                             </p>
                           </div>
                           
@@ -2384,7 +2384,7 @@ export default function Dashboard() {
                     <div>
                       <h4 className="font-bold text-white text-base leading-snug">{b.nome}</h4>
                       <div className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
-                        <Phone className="w-3 h-3" /> {b.telefone_whatsapp}
+                        <Phone className="w-3 h-3" /> {formatarTelefoneBR(b.telefone_whatsapp)}
                       </div>
                       <span className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold">
                         Cargo: {b.tipo || "BARBEIRO"}
@@ -2575,7 +2575,7 @@ export default function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="font-bold text-white text-xs flex items-center gap-1.5 truncate">
                           <Phone className="w-3 h-3 text-emerald-400 shrink-0" />
-                          <span className="truncate">{at.nome || at.numero || "Cliente"}</span>
+                          <span className="truncate">{at.nome || (at.numero ? formatarTelefoneBR(at.numero) : "Cliente")}</span>
                         </div>
                         <p className="text-[11px] text-zinc-400 truncate mt-0.5">{at.motivo}</p>
                         <span className="text-[10px] text-amber-400 font-semibold block mt-0.5">
@@ -3435,7 +3435,8 @@ export default function Dashboard() {
                 return conversasFiltradas.map((conv) => {
                   const ehHumano = conv.status === "HUMANO";
                   const telefoneLimpo = conv.numero?.replace(/[^0-9]/g, "") || "";
-                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+                  const telefoneWpp = telefoneLimpo.startsWith("55") ? telefoneLimpo : (telefoneLimpo.length >= 10 ? "55" + telefoneLimpo : telefoneLimpo);
+                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneWpp}`;
                   const dataFormatada = conv.atualizado_em ? new Date(conv.atualizado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
                   const dataDiaFormatada = conv.atualizado_em ? new Date(conv.atualizado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "";
 
@@ -5361,7 +5362,8 @@ export default function Dashboard() {
             {(() => {
               const ehHumano = modalConversa.status === "HUMANO";
               const telefoneLimpo = modalConversa.numero?.replace(/[^0-9]/g, "") || "";
-              const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+              const telefoneWpp = telefoneLimpo.startsWith("55") ? telefoneLimpo : (telefoneLimpo.length >= 10 ? "55" + telefoneLimpo : telefoneLimpo);
+              const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneWpp}`;
 
               return (
                 <div className="bg-[#202c33] border-b border-[#2a3942] px-4 py-3 flex items-center justify-between gap-3 flex-shrink-0">
@@ -5584,7 +5586,8 @@ export default function Dashboard() {
               <div className="flex items-center gap-2 flex-shrink-0">
                 {(() => {
                   const telefoneLimpo = modalConversa.numero?.replace(/[^0-9]/g, "") || "";
-                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+                  const telefoneWpp = telefoneLimpo.startsWith("55") ? telefoneLimpo : (telefoneLimpo.length >= 10 ? "55" + telefoneLimpo : telefoneLimpo);
+                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneWpp}`;
                   return (
                     <a
                       href={linkWhatsappWeb}
