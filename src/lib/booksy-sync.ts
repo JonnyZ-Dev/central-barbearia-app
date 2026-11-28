@@ -120,14 +120,43 @@ export async function sincronizarServicosBooksy(forcar: boolean = false): Promis
     const jsonLdMatches = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
 
     let offers: any[] = [];
+    let openingHoursSpecs: any[] = [];
     for (const match of jsonLdMatches) {
       try {
         const parsed = JSON.parse(match[1]);
         if (parsed.makesOffer && Array.isArray(parsed.makesOffer) && parsed.makesOffer.length > 0) {
           offers = parsed.makesOffer;
-          break;
+        }
+        if (parsed.openingHoursSpecification && Array.isArray(parsed.openingHoursSpecification)) {
+          openingHoursSpecs = parsed.openingHoursSpecification;
         }
       } catch (errJson) {}
+    }
+
+    // Se encontrou horários no Booksy, sincroniza automaticamente com as configurações da barbearia
+    if (openingHoursSpecs.length > 0) {
+      try {
+        const diaMap: Record<string, string> = {
+          Monday: "Segunda",
+          Tuesday: "Terça",
+          Wednesday: "Quarta",
+          Thursday: "Quinta",
+          Friday: "Sexta",
+          Saturday: "Sábado",
+          Sunday: "Domingo"
+        };
+        const partes = openingHoursSpecs.map(s => {
+          const dias = (Array.isArray(s.dayOfWeek) ? s.dayOfWeek : [s.dayOfWeek]).map((d: string) => diaMap[d] || d);
+          const diasTexto = dias.length === 1 ? dias[0] : (dias.length === 3 && dias[0] === "Terça" && dias[2] === "Quinta") ? "Terça a Quinta" : (dias.length === 2 && dias[0] === "Sexta" && dias[1] === "Sábado") ? "Sexta e Sábado" : dias.join(", ");
+          return `${diasTexto} das ${String(s.opens || "").replace(":00", "h")} às ${String(s.closes || "").replace(":00", "h")}`;
+        });
+        partes.push("Domingo fechado");
+        const horarioTextoFinal = partes.join(" | ");
+        db.prepare("UPDATE configuracoes SET horario_funcionamento = ? WHERE id = 'default'").run(horarioTextoFinal);
+        console.log(`[BOOKSY SYNC] Horário de funcionamento sincronizado do Booksy: "${horarioTextoFinal}"`);
+      } catch (errHorario: any) {
+        console.warn(`[BOOKSY SYNC] Não foi possível atualizar horário: ${errHorario.message}`);
+      }
     }
 
     if (offers.length === 0) {
