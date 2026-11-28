@@ -53,7 +53,10 @@ import {
   Bot,
   MessageCircle,
   Headphones,
-  Filter
+  Filter,
+  CheckCheck,
+  Mic,
+  Image as ImageIcon
 } from "lucide-react";
 import { formatarTelefoneBR, validarTelefoneBR } from "@/lib/formatters";
 
@@ -125,6 +128,12 @@ export default function Dashboard() {
   const [buscaConversa, setBuscaConversa] = useState("");
   const [carregandoConversas, setCarregandoConversas] = useState(false);
   const [acaoConversaLoading, setAcaoConversaLoading] = useState<string | null>(null);
+
+  // Estados do Visualizador Pop-up de Histórico da Conversa (estilo WhatsApp - Somente Leitura)
+  const [modalConversa, setModalConversa] = useState<any | null>(null);
+  const [mensagensChat, setMensagensChat] = useState<any[]>([]);
+  const [carregandoMensagensChat, setCarregandoMensagensChat] = useState(false);
+  const chatFimRef = useRef<HTMLDivElement | null>(null);
 
   // Sub-abas de Organização de Configurações
   const [subTabConfig, setSubTabConfig] = useState<"todas" | "perfil" | "ia" | "localizacao" | "horarios" | "automacoes" | "seguranca" | "atualizacoes">("todas");
@@ -502,6 +511,9 @@ export default function Dashboard() {
       if (json.success) {
         mostrarFeedback(json.message);
         carregarConversas();
+        if (modalConversa && modalConversa.remote_jid === remoteJid) {
+          setModalConversa((prev: any) => prev ? { ...prev, status: novoStatus } : null);
+        }
       } else {
         mostrarFeedback(json.error || "Erro ao atualizar conversa", "error");
       }
@@ -511,6 +523,78 @@ export default function Dashboard() {
       setAcaoConversaLoading(null);
     }
   };
+
+  // Abrir Visualizador Pop-up de Histórico da Conversa no estilo WhatsApp
+  const abrirVisualizadorConversa = async (conv: any) => {
+    setModalConversa(conv);
+    setCarregandoMensagensChat(true);
+    setMensagensChat([]);
+    try {
+      const params = new URLSearchParams();
+      if (conv.remote_jid) params.append("remoteJid", conv.remote_jid);
+      if (conv.numero) params.append("numero", conv.numero);
+
+      const res = await fetch(`/api/whatsapp/conversas/mensagens?${params.toString()}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.mensagens) && json.mensagens.length > 0) {
+        setMensagensChat(json.mensagens);
+      } else {
+        // Fallback se ainda não houver histórico gravado na tabela nova
+        if (conv.ultima_mensagem) {
+          const hora = conv.atualizado_em ? new Date(conv.atualizado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+          setMensagensChat([{
+            id: 'fallback_msg',
+            remote_jid: conv.remote_jid,
+            numero: conv.numero,
+            remetente: conv.ultimo_remetente || 'CLIENTE',
+            nome: conv.nome || '',
+            texto: conv.ultima_mensagem,
+            tipo: 'texto',
+            criado_em: conv.atualizado_em || new Date().toISOString(),
+            data_hora: hora
+          }]);
+        }
+      }
+    } catch (e) {
+      console.error("Erro ao carregar histórico da conversa:", e);
+    } finally {
+      setCarregandoMensagensChat(false);
+    }
+  };
+
+  // Recarregar histórico se o modal estiver aberto
+  const recarregarHistoricoModal = async () => {
+    if (!modalConversa) return;
+    try {
+      const params = new URLSearchParams();
+      if (modalConversa.remote_jid) params.append("remoteJid", modalConversa.remote_jid);
+      if (modalConversa.numero) params.append("numero", modalConversa.numero);
+
+      const res = await fetch(`/api/whatsapp/conversas/mensagens?${params.toString()}`);
+      const json = await res.json();
+      if (json.success && Array.isArray(json.mensagens)) {
+        setMensagensChat(json.mensagens);
+      }
+    } catch (e) {}
+  };
+
+  // Auto-scroll do chat para o fim quando novas mensagens chegarem
+  useEffect(() => {
+    if (modalConversa && chatFimRef.current) {
+      chatFimRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [mensagensChat, modalConversa]);
+
+  // Fechar modal de conversa com tecla Escape
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && modalConversa) {
+        setModalConversa(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [modalConversa]);
 
   // Carregar mensagens configuráveis do robô
   const carregarMensagensBot = async () => {
@@ -3330,27 +3414,29 @@ export default function Dashboard() {
                   return (
                     <div 
                       key={conv.remote_jid}
-                      className={`p-4 sm:p-5 rounded-2xl border transition-all ${
+                      onClick={() => abrirVisualizadorConversa(conv)}
+                      className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer group select-none hover:shadow-xl ${
                         ehHumano
-                          ? "bg-gradient-to-r from-amber-950/20 via-zinc-900/80 to-zinc-900/60 border-amber-500/40 shadow-lg shadow-amber-500/5"
-                          : "bg-zinc-900/60 border-zinc-800/80 hover:border-zinc-700"
+                          ? "bg-gradient-to-r from-amber-950/20 via-zinc-900/80 to-zinc-900/60 border-amber-500/40 shadow-lg shadow-amber-500/5 hover:border-amber-400"
+                          : "bg-zinc-900/60 border-zinc-800/80 hover:border-emerald-500/50 hover:bg-zinc-900/90"
                       }`}
+                      title="Clique para abrir e ver o histórico da conversa no estilo WhatsApp"
                     >
                       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         {/* Informações do Contato e Status */}
                         <div className="flex items-start gap-3.5 flex-1 min-w-0">
                           {/* Avatar */}
-                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0 border ${
+                          <div className={`w-11 h-11 rounded-2xl flex items-center justify-center font-bold text-sm flex-shrink-0 border transition-transform group-hover:scale-105 ${
                             ehHumano
                               ? "bg-amber-500 text-black border-amber-400 font-black shadow-md shadow-amber-500/20"
-                              : "bg-zinc-800 text-zinc-200 border-zinc-700"
+                              : "bg-zinc-800 text-zinc-200 border-zinc-700 group-hover:border-emerald-500/40"
                           }`}>
                             {conv.nome ? conv.nome.charAt(0).toUpperCase() : "C"}
                           </div>
 
                           <div className="space-y-1 flex-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <h4 className="font-bold text-sm text-white truncate">
+                              <h4 className="font-bold text-sm text-white truncate group-hover:text-amber-300 transition-colors">
                                 {conv.nome || "Cliente do WhatsApp"}
                               </h4>
                               
@@ -3398,7 +3484,7 @@ export default function Dashboard() {
                             {/* Snippet da Última Mensagem */}
                             {conv.ultima_mensagem && (
                               <div className="pt-1.5">
-                                <div className="text-xs text-zinc-300 bg-zinc-950/70 border border-zinc-800/80 rounded-xl px-3 py-2 flex items-start gap-2">
+                                <div className="text-xs text-zinc-300 bg-zinc-950/70 border border-zinc-800/80 rounded-xl px-3 py-2 flex items-start gap-2 group-hover:border-zinc-700 transition">
                                   <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
                                     conv.ultimo_remetente === "IA"
                                       ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -3419,12 +3505,29 @@ export default function Dashboard() {
 
                         {/* Botões de Ação na Conversa */}
                         <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 lg:flex-shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-zinc-800/80">
+                          {/* Botão Ver Conversa (Popup estilo WhatsApp) */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              abrirVisualizadorConversa(conv);
+                            }}
+                            className="px-3.5 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 hover:border-emerald-500/50 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition whitespace-nowrap shadow-sm active:scale-95"
+                            title="Abrir histórico da conversa no estilo WhatsApp (somente leitura)"
+                          >
+                            <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
+                            Ver Conversa
+                          </button>
+
                           {ehHumano ? (
                             <button
                               type="button"
                               disabled={acaoConversaLoading === conv.remote_jid}
-                              onClick={() => alternarAtendimentoConversa(conv.remote_jid, "IA", conv.nome, conv.numero)}
-                              className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition disabled:opacity-50 whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alternarAtendimentoConversa(conv.remote_jid, "IA", conv.nome, conv.numero);
+                              }}
+                              className="px-3.5 py-2 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-emerald-500/20 transition disabled:opacity-50 whitespace-nowrap active:scale-95"
                               title="Reativa a Elaine.IA para responder este cliente automaticamente"
                             >
                               <Sparkles className="w-3.5 h-3.5 text-black" />
@@ -3434,8 +3537,11 @@ export default function Dashboard() {
                             <button
                               type="button"
                               disabled={acaoConversaLoading === conv.remote_jid}
-                              onClick={() => alternarAtendimentoConversa(conv.remote_jid, "HUMANO", conv.nome, conv.numero)}
-                              className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition disabled:opacity-50 whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                alternarAtendimentoConversa(conv.remote_jid, "HUMANO", conv.nome, conv.numero);
+                              }}
+                              className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition disabled:opacity-50 whitespace-nowrap active:scale-95"
                               title="Pausa o robô nesta conversa para o barbeiro falar sem ser interrompido"
                             >
                               <Headphones className="w-3.5 h-3.5 text-black" />
@@ -3447,6 +3553,7 @@ export default function Dashboard() {
                             href={linkWhatsappWeb}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition whitespace-nowrap"
                             title="Abrir no WhatsApp Web"
                           >
@@ -5203,6 +5310,271 @@ export default function Dashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE HISTÓRICO DA CONVERSA (ESTILO WHATSAPP - SOMENTE LEITURA) */}
+      {modalConversa && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 animate-in fade-in duration-150"
+          onClick={() => setModalConversa(null)}
+        >
+          <div 
+            className="w-full max-w-2xl bg-[#0b141a] border border-[#222e35] rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[90vh] max-h-[820px] animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header no estilo WhatsApp */}
+            {(() => {
+              const ehHumano = modalConversa.status === "HUMANO";
+              const telefoneLimpo = modalConversa.numero?.replace(/[^0-9]/g, "") || "";
+              const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+
+              return (
+                <div className="bg-[#202c33] border-b border-[#2a3942] px-4 py-3 flex items-center justify-between gap-3 flex-shrink-0">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Avatar */}
+                    <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-sm flex-shrink-0 border ${
+                      ehHumano
+                        ? "bg-amber-500 text-black border-amber-400 font-black"
+                        : "bg-zinc-800 text-emerald-400 border-zinc-700"
+                    }`}>
+                      {modalConversa.nome ? modalConversa.nome.charAt(0).toUpperCase() : "C"}
+                    </div>
+
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-bold text-sm text-[#e9edef] truncate">
+                          {modalConversa.nome || "Cliente do WhatsApp"}
+                        </h3>
+                        <span className="text-xs font-mono text-[#8696a0] hidden sm:inline">
+                          {formatarTelefoneBR(modalConversa.numero)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-0.5">
+                        {ehHumano ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-black uppercase tracking-wider">
+                            <Headphones className="w-2.5 h-2.5" />
+                            Atendimento Humano
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 uppercase tracking-wider">
+                            <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                            Elaine.IA Ativa
+                          </span>
+                        )}
+                        <span className="text-[11px] text-[#8696a0] sm:hidden">
+                          {formatarTelefoneBR(modalConversa.numero)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Ações no Topo do Modal */}
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {ehHumano ? (
+                      <button
+                        type="button"
+                        disabled={acaoConversaLoading === modalConversa.remote_jid}
+                        onClick={() => alternarAtendimentoConversa(modalConversa.remote_jid, "IA", modalConversa.nome, modalConversa.numero)}
+                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black rounded-xl text-xs font-black flex items-center gap-1 shadow-md shadow-emerald-500/20 transition disabled:opacity-50"
+                        title="Reativa a Elaine.IA para responder este cliente"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Passar p/ Elaine.IA</span>
+                        <span className="sm:hidden">IA</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={acaoConversaLoading === modalConversa.remote_jid}
+                        onClick={() => alternarAtendimentoConversa(modalConversa.remote_jid, "HUMANO", modalConversa.nome, modalConversa.numero)}
+                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center gap-1 shadow-md shadow-amber-500/20 transition disabled:opacity-50"
+                        title="Pausa o robô nesta conversa para atendimento humano"
+                      >
+                        <Headphones className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Assumir Atendimento</span>
+                        <span className="sm:hidden">Assumir</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={recarregarHistoricoModal}
+                      title="Recarregar mensagens"
+                      className="p-2 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#111b21] rounded-xl transition"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${carregandoMensagensChat ? "animate-spin text-emerald-400" : ""}`} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setModalConversa(null)}
+                      title="Fechar histórico (Esc)"
+                      className="p-2 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#111b21] rounded-xl transition"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Aviso de Modo Somente Leitura */}
+            <div className="bg-[#182229] border-b border-[#222e35] px-4 py-2 text-zinc-400 text-[11px] flex items-center justify-center gap-2 flex-shrink-0 text-center">
+              <Lock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+              <span>Modo visualização de histórico • As mensagens são trocadas pelo WhatsApp físico ou pela Elaine.IA</span>
+            </div>
+
+            {/* Feed de Mensagens (WhatsApp) */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3 bg-[#0b141a]">
+              {carregandoMensagensChat ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-zinc-400 py-12">
+                  <RefreshCw className="w-6 h-6 animate-spin text-emerald-400" />
+                  <p className="text-xs">Buscando mensagens do WhatsApp...</p>
+                </div>
+              ) : mensagensChat.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center gap-3 text-center py-16 px-4">
+                  <div className="w-14 h-14 rounded-2xl bg-zinc-900 border border-zinc-800 flex items-center justify-center text-zinc-600">
+                    <MessageSquare className="w-7 h-7" />
+                  </div>
+                  <div className="max-w-sm">
+                    <h4 className="text-sm font-bold text-zinc-300">Nenhum histórico anterior gravado</h4>
+                    <p className="text-xs text-zinc-500 mt-1 leading-relaxed">
+                      As novas mensagens trocadas com este cliente pelo WhatsApp ficarão salvas e visíveis aqui automaticamente.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                mensagensChat.map((msg, idx) => {
+                  const ehCliente = msg.remetente === "CLIENTE";
+                  const ehIA = msg.remetente === "IA";
+
+                  if (ehCliente) {
+                    return (
+                      <div key={msg.id || idx} className="flex justify-start">
+                        <div className="max-w-[85%] sm:max-w-[75%] bg-[#202c33] text-[#e9edef] rounded-2xl rounded-tl-sm px-3.5 py-2.5 shadow-md border border-[#2a3942]/60">
+                          {/* Identificador se for Áudio ou Imagem */}
+                          {msg.tipo === "audio" && (
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400 mb-1.5 pb-1 border-b border-emerald-500/20">
+                              <Mic className="w-3.5 h-3.5" />
+                              <span>Áudio do WhatsApp (Transcrito por IA)</span>
+                            </div>
+                          )}
+
+                          {msg.tipo === "imagem" && (
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 mb-1.5 pb-1 border-b border-amber-500/20">
+                              <ImageIcon className="w-3.5 h-3.5" />
+                              <span>Imagem / Foto enviada pelo cliente</span>
+                            </div>
+                          )}
+
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.texto}
+                          </p>
+
+                          <div className="text-[10px] text-[#8696a0] text-right mt-1 font-mono">
+                            {msg.data_hora || "Hoje"}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  if (ehIA) {
+                    return (
+                      <div key={msg.id || idx} className="flex justify-end">
+                        <div className="max-w-[85%] sm:max-w-[75%] bg-[#005c4b] text-[#e9edef] rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-md border border-[#007a63]/50">
+                          {/* Badge Elaine.IA */}
+                          <div className="flex items-center gap-1.5 text-[11px] font-black text-emerald-200 mb-1 pb-1 border-b border-emerald-400/20">
+                            <Sparkles className="w-3 h-3 text-emerald-300" />
+                            <span>Elaine.IA</span>
+                          </div>
+
+                          <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                            {msg.texto}
+                          </p>
+
+                          <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-emerald-200/80 font-mono">
+                            <span>{msg.data_hora || "Hoje"}</span>
+                            <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Remetente Barbeiro / Atendimento Humano
+                  return (
+                    <div key={msg.id || idx} className="flex justify-end">
+                      <div className="max-w-[85%] sm:max-w-[75%] bg-[#1a2e22] text-[#e9edef] rounded-2xl rounded-tr-sm px-3.5 py-2.5 shadow-md border border-amber-500/30">
+                        {/* Badge Barbeiro */}
+                        <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-300 mb-1 pb-1 border-b border-amber-400/20">
+                          <Headphones className="w-3 h-3 text-amber-400" />
+                          <span>Barbeiro (Atendimento Humano)</span>
+                        </div>
+
+                        {msg.tipo === "imagem" && (
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400 mb-1.5 pb-1 border-b border-amber-500/20">
+                            <ImageIcon className="w-3.5 h-3.5" />
+                            <span>Foto enviada pelo barbeiro</span>
+                          </div>
+                        )}
+
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                          {msg.texto}
+                        </p>
+
+                        <div className="flex items-center justify-end gap-1 mt-1 text-[10px] text-zinc-400 font-mono">
+                          <span>{msg.data_hora || "Hoje"}</span>
+                          <CheckCheck className="w-3.5 h-3.5 text-[#53bdeb]" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={chatFimRef} />
+            </div>
+
+            {/* Rodapé Somente Leitura estilo WhatsApp */}
+            <div className="bg-[#202c33] border-t border-[#2a3942] p-3 sm:p-4 flex items-center justify-between gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2 text-xs text-[#8696a0] min-w-0">
+                <Lock className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span className="truncate hidden sm:inline">
+                  Visualizador somente leitura. Para responder ao cliente, abra o WhatsApp:
+                </span>
+                <span className="sm:hidden truncate">Somente leitura</span>
+              </div>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {(() => {
+                  const telefoneLimpo = modalConversa.numero?.replace(/[^0-9]/g, "") || "";
+                  const linkWhatsappWeb = `https://web.whatsapp.com/send?phone=${telefoneLimpo}`;
+                  return (
+                    <a
+                      href={linkWhatsappWeb}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition whitespace-nowrap active:scale-95"
+                      title="Abrir esta conversa no WhatsApp Web"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Abrir no WhatsApp</span>
+                    </a>
+                  );
+                })()}
+
+                <button
+                  type="button"
+                  onClick={() => setModalConversa(null)}
+                  className="px-3.5 py-2 bg-[#111b21] hover:bg-zinc-800 text-zinc-300 hover:text-white rounded-xl text-xs font-bold border border-[#2a3942] transition whitespace-nowrap"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
