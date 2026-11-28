@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       });
     }
 
-    if (acao === "PASSAR_PARA_IA") {
+    if (acao === "PASSAR_PARA_IA" || acao === "REATIVAR") {
       removerPausaAtendimentoHumano(remoteJid);
       return NextResponse.json({
         success: true,

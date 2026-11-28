@@ -146,7 +146,7 @@ const atendimentosHumanosCache = new Map<string, {
 function ehComandoReativarBot(texto: string): boolean {
   const t = (texto || "").trim().toLowerCase();
   if (!t) return false;
-  return t === "/ia" || t === "/retomar" || t === "/liberar";
+  return t === "/ia" || t === "/retomar" || t === "/liberar" || t === "#ativar" || t === "#reativar";
 }
 
 // Helper oficial de envio do robô que cataloga o ID da mensagem para evitar auto-interferência e retries
@@ -291,21 +291,35 @@ export function ativarPausaAtendimentoHumano(
     const expiraEm = agora + (minutosPausa * 60 * 1000);
     const iniciadoEm = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-    const numFormatado = numero || remoteJid.replace(/[^0-9]/g, "");
+    const numFormatado = (numero || remoteJid).replace(/[^0-9]/g, "");
     const nomeFormatado = nome || "";
 
-    atendimentosHumanosCache.set(remoteJid, {
+    const itemCache = {
       numero: numFormatado,
       nome: nomeFormatado,
       motivo,
       iniciadoEm,
       expiraEm
-    });
+    };
+
+    // Indexa por JID exato, por número limpo e por formato @s.whatsapp.net
+    atendimentosHumanosCache.set(remoteJid, itemCache);
+    if (numFormatado) {
+      atendimentosHumanosCache.set(numFormatado, itemCache);
+      atendimentosHumanosCache.set(`${numFormatado}@s.whatsapp.net`, itemCache);
+    }
+    if (lidToPhoneMap.has(remoteJid)) {
+      const tel = lidToPhoneMap.get(remoteJid)!;
+      atendimentosHumanosCache.set(tel, itemCache);
+      atendimentosHumanosCache.set(`${tel}@s.whatsapp.net`, itemCache);
+    }
 
     db.prepare(`
       INSERT INTO atendimentos_humanos (remote_jid, numero, nome, motivo, iniciado_em, expira_em)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(remote_jid) DO UPDATE SET
+        numero = excluded.numero,
+        nome = CASE WHEN excluded.nome != '' THEN excluded.nome ELSE atendimentos_humanos.nome END,
         motivo = excluded.motivo,
         expira_em = excluded.expira_em
     `).run(remoteJid, numFormatado, nomeFormatado, motivo, iniciadoEm, expiraEm);
@@ -318,23 +332,59 @@ export function ativarPausaAtendimentoHumano(
       ultimoRemetente: "HUMANO"
     });
 
-    console.log(`[PAUSA ROBÔ] Robô pausado para ${remoteJid} por ${minutosPausa} min. Motivo: ${motivo}`);
-  } catch (e) {
-    console.error("Erro ao ativar pausa de atendimento humano:", e);
+    console.log(`[PAUSA ROBÔ] Atendimento humano ativado/renovado para ${remoteJid} por ${minutosPausa} min. Motivo: ${motivo}`);
+  } catch (e: any) {
+    console.error("Erro ao ativar pausa de atendimento humano:", e.message);
   }
 }
 
 export function verificarAtendimentoHumanoAtivo(remoteJid: string): boolean {
-  const item = atendimentosHumanosCache.get(remoteJid);
+  const agora = Date.now();
+  const numLimpo = remoteJid.replace(/[^0-9]/g, "");
+
+  // 1. Checa no cache em memória (por JID direto, número ou mapeamento de LID)
+  let item = atendimentosHumanosCache.get(remoteJid) ||
+             (numLimpo ? atendimentosHumanosCache.get(numLimpo) : null) ||
+             (numLimpo ? atendimentosHumanosCache.get(`${numLimpo}@s.whatsapp.net`) : null);
+
+  if (!item && lidToPhoneMap.has(remoteJid)) {
+    const tel = lidToPhoneMap.get(remoteJid)!;
+    item = atendimentosHumanosCache.get(tel) || atendimentosHumanosCache.get(`${tel}@s.whatsapp.net`);
+  }
+
+  // 2. Se não estiver no cache em memória, consulta o banco SQLite
+  if (!item) {
+    try {
+      const db = getDb();
+      const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
+      const row: any = db.prepare(`
+        SELECT * FROM atendimentos_humanos 
+        WHERE (remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%'))
+          AND expira_em > ?
+      `).get(remoteJid, numLimpo, ultimos8, ultimos8, agora);
+
+      if (row) {
+        item = {
+          numero: row.numero || numLimpo,
+          nome: row.nome || "",
+          motivo: row.motivo || "Atendimento humano ativo",
+          iniciadoEm: row.iniciado_em || "",
+          expiraEm: Number(row.expira_em)
+        };
+        atendimentosHumanosCache.set(remoteJid, item);
+        if (numLimpo) atendimentosHumanosCache.set(numLimpo, item);
+      }
+    } catch (e: any) {
+      console.warn("Erro ao consultar atendimentos_humanos no banco:", e.message);
+    }
+  }
+
   if (!item) return false;
 
-  const agora = Date.now();
+  // 3. Se expirou (mais de 30 minutos sem nenhuma interação de ambas as partes)
   if (agora > item.expiraEm) {
-    atendimentosHumanosCache.delete(remoteJid);
-    try {
-      getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ?").run(remoteJid);
-    } catch (e) {}
-    console.log(`[ATENDIMENTO HUMANO EXPIRADO] 30 minutos sem interação para ${remoteJid}. Elaine.IA assumindo o comando novamente!`);
+    removerPausaAtendimentoHumano(remoteJid);
+    console.log(`[ATENDIMENTO HUMANO EXPIRADO] 30 minutos sem interação para ${remoteJid}. Elaine.IA reassumindo o atendimento!`);
     return false;
   }
 
@@ -342,15 +392,29 @@ export function verificarAtendimentoHumanoAtivo(remoteJid: string): boolean {
 }
 
 export function removerPausaAtendimentoHumano(remoteJid: string) {
+  const numLimpo = remoteJid.replace(/[^0-9]/g, "");
   atendimentosHumanosCache.delete(remoteJid);
+  if (numLimpo) {
+    atendimentosHumanosCache.delete(numLimpo);
+    atendimentosHumanosCache.delete(`${numLimpo}@s.whatsapp.net`);
+  }
+  if (lidToPhoneMap.has(remoteJid)) {
+    const tel = lidToPhoneMap.get(remoteJid)!;
+    atendimentosHumanosCache.delete(tel);
+    atendimentosHumanosCache.delete(`${tel}@s.whatsapp.net`);
+  }
+
   try {
-    getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ?").run(remoteJid);
+    const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
+    getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%')").run(remoteJid, numLimpo, ultimos8, ultimos8);
     registrarAtividadeConversa(remoteJid, {
       status: "IA",
       motivoPausa: undefined
     });
     console.log(`[PAUSA ROBÔ] Robô reativado para ${remoteJid}`);
-  } catch (e) {}
+  } catch (e: any) {
+    console.error("Erro ao remover atendimento humano:", e.message);
+  }
 }
 
 export function listarAtendimentosHumanos() {
@@ -846,8 +910,9 @@ export async function iniciarWhatsAppBot() {
     });
 
     sock.ev.on("messages.upsert", async (m: any) => {
-      // 1. Filtrar APENAS eventos do tipo "notify" (ignora append, sync de histórico e receipts repetidos)
-      if (m.type !== "notify" || !m.messages || m.messages.length === 0) return;
+      // 1. Processar mensagens recebidas (notify) E mensagens enviadas pelo atendente/barbeiro no celular (append)
+      if (!m.messages || m.messages.length === 0) return;
+      if (m.type !== "notify" && m.type !== "append") return;
 
       for (const msg of m.messages) {
         try {
@@ -866,19 +931,29 @@ export async function iniciarWhatsAppBot() {
               continue;
             }
 
+            // Ignorar mensagens antigas de sincronização histórica (> 90 segundos)
+            const timestampMsg = Number(msg.messageTimestamp) * 1000;
+            if (timestampMsg && Date.now() - timestampMsg > 90000) {
+              continue;
+            }
+
             // SE NÃO FOI O ROBÔ, FOI O BARBEIRO / ATENDENTE NO CELULAR OU NO WHATSAPP WEB!
             const telLimpo = remoteJid.replace(/[^0-9]/g, "");
             const textoAtendente = (
               msg.message?.conversation ||
               msg.message?.extendedTextMessage?.text ||
+              msg.message?.imageMessage?.caption ||
+              msg.message?.videoMessage?.caption ||
+              (msg.message?.audioMessage ? "[🎙️ Áudio enviado pelo barbeiro]" : "") ||
               ""
-            ).trim().toLowerCase();
+            ).trim();
+            const textoLimpoAtendente = textoAtendente.toLowerCase();
 
             // COMANDO OFICIAL: ASSUMIR ATENDIMENTO HUMANO (/atender)
             if (
-              textoAtendente === "/atender" ||
-              textoAtendente === "!atender" ||
-              textoAtendente === "atender"
+              textoLimpoAtendente === "/atender" ||
+              textoLimpoAtendente === "!atender" ||
+              textoLimpoAtendente === "atender"
             ) {
               ativarPausaAtendimentoHumano(
                 remoteJid,
@@ -890,18 +965,28 @@ export async function iniciarWhatsAppBot() {
               continue;
             }
 
-            // COMANDO AUXILIAR: LIBERAR ELAINE.IA ANTECIPADAMENTE (/ia)
+            // COMANDO AUXILIAR: LIBERAR ELAINE.IA ANTECIPADAMENTE (/ia, /retomar, /liberar, #ativar, #reativar)
             if (
-              textoAtendente === "/ia" ||
-              textoAtendente === "/retomar" ||
-              textoAtendente === "/liberar"
+              textoLimpoAtendente === "/ia" ||
+              textoLimpoAtendente === "/retomar" ||
+              textoLimpoAtendente === "/liberar" ||
+              textoLimpoAtendente === "#ativar" ||
+              textoLimpoAtendente === "#reativar"
             ) {
               removerPausaAtendimentoHumano(remoteJid);
               console.log(`[COMANDO /IA] Elaine.IA retomada manualmente para ${remoteJid}!`);
               continue;
             }
 
-            // Qualquer mensagem digitada pelo atendente no celular ou WhatsApp Web RENOVA a pausa de 30 minutos
+            // CANCELA IMEDIATAMENTE QUALQUER RESPOSTA PENDENTE NO BUFFER/TIMER DO ROBÔ PARA ESTE CLIENTE
+            if (chatBuffers.has(remoteJid)) {
+              const cb = chatBuffers.get(remoteJid);
+              if (cb?.timer) clearTimeout(cb.timer);
+              cb.mensagens = [];
+              cb.processando = false;
+            }
+
+            // Qualquer mensagem digitada pelo atendente no celular ou WhatsApp Web ATIVA/RENOVA a pausa de 30 minutos
             ativarPausaAtendimentoHumano(
               remoteJid,
               "Atendente conversando no WhatsApp",
@@ -911,12 +996,12 @@ export async function iniciarWhatsAppBot() {
             registrarAtividadeConversa(remoteJid, {
               numero: telLimpo,
               nome: (msg as any)?.pushName,
-              ultimaMensagem: textoAtendente,
+              ultimaMensagem: textoAtendente || "Mensagem enviada pelo barbeiro",
               ultimoRemetente: "HUMANO",
               status: "HUMANO",
               motivoPausa: "Atendente conversando no WhatsApp"
             });
-            console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. IA pausada por 30 minutos.`);
+            console.log(`[PAUSA ROBÔ] Atendente humano enviou mensagem para ${remoteJid}. IA pausada por 30 minutos sem interação.`);
             continue;
           }
 

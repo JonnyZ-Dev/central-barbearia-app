@@ -552,14 +552,14 @@ export default function Dashboard() {
 
   const reativarRoboConversa = async (remoteJid: string) => {
     try {
-      const res = await fetch("/api/whatsapp/atendimentos", {
+      const res = await fetch("/api/whatsapp/conversas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ remoteJid, acao: "REATIVAR" })
+        body: JSON.stringify({ remoteJid, acao: "PASSAR_PARA_IA" })
       });
       const json = await res.json();
       if (json.success) {
-        mostrarFeedback("Robô reativado para este cliente com sucesso!");
+        mostrarFeedback("Elaine.IA reativada para este cliente com sucesso!");
         carregarAtendimentosHumanos();
       }
     } catch (e) {
