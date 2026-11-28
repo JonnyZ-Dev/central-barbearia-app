@@ -485,8 +485,33 @@ export default function Dashboard() {
       if (mostrarLoading) setCarregandoConversas(true);
       const res = await fetch("/api/whatsapp/conversas");
       const json = await res.json();
-      if (json.success) {
-        setConversas(json.conversas || []);
+      if (json.success && Array.isArray(json.conversas)) {
+        // Deduplicação defensiva por número de telefone / contato para nunca exibir cartões duplicados
+        const mapa = new Map<string, any>();
+        for (const c of json.conversas) {
+          const num = (c.numero || c.remote_jid || "").replace(/\D/g, "");
+          const chave = num.length >= 8 ? num.slice(-8) : c.remote_jid;
+          if (!mapa.has(chave)) {
+            mapa.set(chave, c);
+          } else {
+            const ext = mapa.get(chave);
+            const prefereTextoAtual = (!c.ultima_mensagem?.startsWith("(Atend") && ext.ultima_mensagem?.startsWith("(Atend"));
+            const maisRecente = Number(c.atualizado_em) > Number(ext.atualizado_em);
+            const status = (ext.status === "HUMANO" || c.status === "HUMANO") ? "HUMANO" : c.status;
+            const motivo = (ext.status === "HUMANO" ? ext.motivo_pausa : c.motivo_pausa) || ext.motivo_pausa || c.motivo_pausa;
+            const minutos = Math.max(ext.minutos_restantes || 0, c.minutos_restantes || 0);
+
+            mapa.set(chave, {
+              ...ext,
+              ...c,
+              status,
+              motivo_pausa: motivo,
+              minutos_restantes: minutos,
+              ultima_mensagem: prefereTextoAtual ? c.ultima_mensagem : (maisRecente ? c.ultima_mensagem : ext.ultima_mensagem)
+            });
+          }
+        }
+        setConversas(Array.from(mapa.values()));
       }
     } catch (e) {
       // Falha silenciosa no polling

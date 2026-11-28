@@ -149,6 +149,26 @@ function ehComandoReativarBot(texto: string): boolean {
   return t === "/ia" || t === "/retomar" || t === "/liberar" || t === "#ativar" || t === "#reativar";
 }
 
+// Normaliza o remoteJid do WhatsApp/Baileys removendo sufixos de dispositivo (:1, :2) e padronizando @s.whatsapp.net
+export function normalizarRemoteJid(jid: string): string {
+  if (!jid) return "";
+  let j = jid.trim();
+  if (j.endsWith("@g.us") || j.endsWith("@broadcast")) return j;
+
+  // Se for apenas dígitos numéricos, adiciona o sufixo padrão
+  if (/^\d+$/.test(j)) {
+    j = `${j}@s.whatsapp.net`;
+  }
+
+  // Remove sufixo de multi-device (:1, :2, etc)
+  j = j.replace(/:[0-9]+@/, "@");
+
+  // Padroniza @c.us para @s.whatsapp.net
+  j = j.replace("@c.us", "@s.whatsapp.net");
+
+  return j;
+}
+
 // Extrai texto limpo e tipo de qualquer formato de mensagem do Baileys (inclusive efêmeras, viewOnce, mídias)
 export function extrairTextoEInfoMensagem(msg: any): { texto: string; tipo: "texto" | "audio" | "imagem" | "video" | "documento" } {
   if (!msg) return { texto: "", tipo: "texto" };
@@ -394,12 +414,31 @@ export function registrarAtividadeConversa(
   try {
     const db = getDb();
     const agora = Date.now();
-    const numeroLimpo = dados.numero || remoteJid.replace(/[^0-9]/g, "");
+    const jidNormalizado = normalizarRemoteJid(remoteJid);
+    const numeroLimpo = dados.numero || jidNormalizado.replace(/[^0-9]/g, "");
+    const ultimos8 = numeroLimpo.length >= 8 ? numeroLimpo.slice(-8) : numeroLimpo;
     const nome = dados.nome || null;
     const msg = dados.ultimaMensagem || null;
     const remetente = dados.ultimoRemetente || "CLIENTE";
     const status = dados.status || "IA";
     const motivo = dados.motivoPausa || null;
+
+    // Localiza se já existe uma linha desta mesma conversa (por JID ou pelos últimos 8 dígitos)
+    const convExistente: any = db.prepare(`
+      SELECT remote_jid, ultima_mensagem FROM conversas_whatsapp 
+      WHERE remote_jid = ? 
+         OR numero = ? 
+         OR (? != '' AND (numero LIKE '%' || ? || '%' OR remote_jid LIKE '%' || ? || '%'))
+      LIMIT 1
+    `).get(jidNormalizado, numeroLimpo, ultimos8, ultimos8, ultimos8);
+
+    const jidAlvo = convExistente?.remote_jid || jidNormalizado;
+
+    // Se a mensagem enviada for um placeholder genérico e já tínhamos uma mensagem real anterior, preserva a mensagem real
+    let msgFinal = msg;
+    if (msg?.startsWith("(Atendimento") && convExistente?.ultima_mensagem && !convExistente.ultima_mensagem.startsWith("(Atendimento")) {
+      msgFinal = convExistente.ultima_mensagem;
+    }
 
     db.prepare(`
       INSERT INTO conversas_whatsapp (remote_jid, numero, nome, ultima_mensagem, ultimo_remetente, status, motivo_pausa, atualizado_em, criado_em)
@@ -412,7 +451,7 @@ export function registrarAtividadeConversa(
         status = excluded.status,
         motivo_pausa = excluded.motivo_pausa,
         atualizado_em = excluded.atualizado_em
-    `).run(remoteJid, numeroLimpo, nome, msg, remetente, status, motivo, agora, agora);
+    `).run(jidAlvo, numeroLimpo, nome, msgFinal, remetente, status, motivo, agora, agora);
   } catch (err: any) {
     console.error("[CONVERSAS] Erro ao registrar atividade:", err.message);
   }
@@ -421,16 +460,76 @@ export function registrarAtividadeConversa(
 export function listarConversasCompletas() {
   try {
     const db = getDb();
-    const rows: any[] = db.prepare("SELECT * FROM conversas_whatsapp ORDER BY atualizado_em DESC LIMIT 150").all() || [];
     const agora = Date.now();
 
-    // Garantir que qualquer atendimento humano ativo no cache apareça mesmo se ainda não registrado no banco
-    const jidsExistentes = new Set(rows.map(r => r.remote_jid));
+    // 1. Limpeza preventiva de duplicatas históricas no banco SQLite:
+    // Mantém apenas 1 registro por cliente (últimos 8 dígitos), priorizando mensagem real e data mais recente
+    try {
+      db.prepare(`
+        DELETE FROM conversas_whatsapp 
+        WHERE remote_jid NOT IN (
+          SELECT remote_jid FROM (
+            SELECT remote_jid, ROW_NUMBER() OVER (
+              PARTITION BY CASE 
+                WHEN LENGTH(REPLACE(REPLACE(numero, '-', ''), ' ', '')) >= 8 
+                THEN SUBSTR(REPLACE(REPLACE(numero, '-', ''), ' ', ''), -8)
+                ELSE remote_jid 
+              END 
+              ORDER BY 
+                CASE WHEN ultima_mensagem LIKE '(Atendimento%' THEN 1 ELSE 0 END ASC,
+                atualizado_em DESC
+            ) as rn
+            FROM conversas_whatsapp
+          ) WHERE rn = 1
+        )
+      `).run();
+    } catch (e) {}
+
+    const rows: any[] = db.prepare("SELECT * FROM conversas_whatsapp ORDER BY atualizado_em DESC LIMIT 150").all() || [];
+
+    // 2. Mapa deduplicado em memória indexado pelos últimos 8 dígitos do telefone
+    const mapaConversas = new Map<string, any>();
+
+    for (const r of rows) {
+      const numLimpo = (r.numero || r.remote_jid || "").replace(/\D/g, "");
+      const chaveCliente = numLimpo.length >= 8 ? numLimpo.slice(-8) : (r.remote_jid || r.numero);
+      if (!chaveCliente) continue;
+
+      if (!mapaConversas.has(chaveCliente)) {
+        mapaConversas.set(chaveCliente, { ...r });
+      } else {
+        const existente = mapaConversas.get(chaveCliente);
+        // Prefere mensagem de texto real a placeholders de atendimento
+        const prefereTextoAtual = (!r.ultima_mensagem?.startsWith("(Atend") && existente.ultima_mensagem?.startsWith("(Atend"));
+        if (prefereTextoAtual || Number(r.atualizado_em) > Number(existente.atualizado_em)) {
+          mapaConversas.set(chaveCliente, {
+            ...existente,
+            ...r,
+            ultima_mensagem: prefereTextoAtual ? r.ultima_mensagem : (existente.ultima_mensagem || r.ultima_mensagem)
+          });
+        }
+      }
+    }
+
+    // 3. Atualiza estado de atendimento humano do cache SEM duplicar cartões
     for (const [jid, cacheItem] of atendimentosHumanosCache.entries()) {
-      if (cacheItem.expiraEm > agora && !jidsExistentes.has(jid)) {
-        rows.unshift({
-          remote_jid: jid,
-          numero: cacheItem.numero || jid.replace(/[^0-9]/g, ""),
+      if (cacheItem.expiraEm <= agora) continue;
+
+      const numLimpo = (cacheItem.numero || jid).replace(/\D/g, "");
+      const chaveCliente = numLimpo.length >= 8 ? numLimpo.slice(-8) : jid;
+      if (!chaveCliente) continue;
+
+      if (mapaConversas.has(chaveCliente)) {
+        // Já existe a conversa deste cliente: apenas atualiza o status para HUMANO
+        const existente = mapaConversas.get(chaveCliente);
+        existente.status = "HUMANO";
+        existente.motivo_pausa = cacheItem.motivo || existente.motivo_pausa || "Atendimento assumido";
+      } else {
+        // Cliente em atendimento humano que ainda não estava na tabela conversas_whatsapp
+        const jidValido = jid.includes("@") ? normalizarRemoteJid(jid) : `${numLimpo}@s.whatsapp.net`;
+        mapaConversas.set(chaveCliente, {
+          remote_jid: jidValido,
+          numero: cacheItem.numero || numLimpo,
           nome: cacheItem.nome || "Cliente em Atendimento",
           ultima_mensagem: "(Atendimento humano em andamento)",
           ultimo_remetente: "HUMANO",
@@ -442,24 +541,36 @@ export function listarConversasCompletas() {
       }
     }
 
-    return rows.map(r => {
-      const estaPausado = verificarAtendimentoHumanoAtivo(r.remote_jid);
-      const itemCache = atendimentosHumanosCache.get(r.remote_jid);
+    // 4. Formata a lista final com cálculo exato de tempo restante da Elaine.IA
+    const listaFinal = Array.from(mapaConversas.values()).map(r => {
+      const jidNorm = normalizarRemoteJid(r.remote_jid);
+      const estaPausado = verificarAtendimentoHumanoAtivo(jidNorm);
+      const numLimpo = (r.numero || jidNorm || "").replace(/\D/g, "");
+      const itemCache = atendimentosHumanosCache.get(jidNorm) || 
+                        atendimentosHumanosCache.get(r.remote_jid) ||
+                        atendimentosHumanosCache.get(numLimpo) ||
+                        (numLimpo ? atendimentosHumanosCache.get(`${numLimpo}@s.whatsapp.net`) : undefined);
+
       const minutosRestantes = itemCache && itemCache.expiraEm > agora ? Math.round((itemCache.expiraEm - agora) / 60000) : 0;
+      const statusFinal = (estaPausado || r.status === "HUMANO") ? "HUMANO" : "IA";
+      const motivoFinal = statusFinal === "HUMANO" ? (itemCache?.motivo || r.motivo_pausa || "Atendimento assumido") : null;
 
       return {
         remote_jid: r.remote_jid,
-        numero: r.numero,
+        numero: r.numero || numLimpo,
         nome: r.nome || "Cliente",
         ultima_mensagem: r.ultima_mensagem || "",
         ultimo_remetente: r.ultimo_remetente || "CLIENTE",
-        status: estaPausado ? "HUMANO" : "IA",
-        motivo_pausa: estaPausado ? (itemCache?.motivo || r.motivo_pausa || "Atendimento assumido") : null,
+        status: statusFinal,
+        motivo_pausa: motivoFinal,
         minutos_restantes: minutosRestantes,
         atualizado_em: r.atualizado_em,
         criado_em: r.criado_em
       };
     });
+
+    listaFinal.sort((a, b) => (Number(b.atualizado_em) || 0) - (Number(a.atualizado_em) || 0));
+    return listaFinal;
   } catch (err: any) {
     console.error("[CONVERSAS] Erro ao listar conversas:", err.message);
     return [];
@@ -480,7 +591,8 @@ export function ativarPausaAtendimentoHumano(
     const expiraEm = agora + (minutosPausa * 60 * 1000);
     const iniciadoEm = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
-    const numFormatado = (numero || remoteJid).replace(/[^0-9]/g, "");
+    const jidNormalizado = normalizarRemoteJid(remoteJid);
+    const numFormatado = (numero || jidNormalizado).replace(/[^0-9]/g, "");
     const nomeFormatado = nome || "";
 
     const itemCache = {
@@ -491,8 +603,11 @@ export function ativarPausaAtendimentoHumano(
       expiraEm
     };
 
-    // Indexa por JID exato, por número limpo e por formato @s.whatsapp.net
-    atendimentosHumanosCache.set(remoteJid, itemCache);
+    // Indexa por JID normalizado, JID original, número limpo e formato @s.whatsapp.net
+    atendimentosHumanosCache.set(jidNormalizado, itemCache);
+    if (remoteJid !== jidNormalizado) {
+      atendimentosHumanosCache.set(remoteJid, itemCache);
+    }
     if (numFormatado) {
       atendimentosHumanosCache.set(numFormatado, itemCache);
       atendimentosHumanosCache.set(`${numFormatado}@s.whatsapp.net`, itemCache);
@@ -511,9 +626,9 @@ export function ativarPausaAtendimentoHumano(
         nome = CASE WHEN excluded.nome != '' THEN excluded.nome ELSE atendimentos_humanos.nome END,
         motivo = excluded.motivo,
         expira_em = excluded.expira_em
-    `).run(remoteJid, numFormatado, nomeFormatado, motivo, iniciadoEm, expiraEm);
+    `).run(jidNormalizado, numFormatado, nomeFormatado, motivo, iniciadoEm, expiraEm);
 
-    registrarAtividadeConversa(remoteJid, {
+    registrarAtividadeConversa(jidNormalizado, {
       numero: numFormatado,
       nome: nomeFormatado,
       status: "HUMANO",
