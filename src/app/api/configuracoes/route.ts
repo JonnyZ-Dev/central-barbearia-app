@@ -4,7 +4,12 @@ import { getDb } from "@/lib/db";
 export async function GET() {
   try {
     const db = getDb();
-    const config = db.prepare("SELECT * FROM configuracoes WHERE id = 'default'").get();
+    const config: any = db.prepare("SELECT * FROM configuracoes WHERE id = 'default'").get();
+    if (config && (!config.horario_funcionamento || config.horario_funcionamento.includes("Segunda: Fechado") || config.horario_funcionamento.includes("Domingo e Segunda") || config.horario_funcionamento.includes("Terça a Sábado"))) {
+      const horarioReal = "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado";
+      db.prepare("UPDATE configuracoes SET horario_funcionamento = ? WHERE id = 'default'").run(horarioReal);
+      config.horario_funcionamento = horarioReal;
+    }
     return NextResponse.json({ success: true, config });
   } catch (error: any) {
     console.error("ERRO GET /api/configuracoes:", error);

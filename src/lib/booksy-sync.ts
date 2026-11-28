@@ -145,13 +145,13 @@ export async function sincronizarServicosBooksy(forcar: boolean = false): Promis
           Saturday: "Sábado",
           Sunday: "Domingo"
         };
-        const partes = openingHoursSpecs.map(s => {
-          const dias = (Array.isArray(s.dayOfWeek) ? s.dayOfWeek : [s.dayOfWeek]).map((d: string) => diaMap[d] || d);
-          const diasTexto = dias.length === 1 ? dias[0] : (dias.length === 3 && dias[0] === "Terça" && dias[2] === "Quinta") ? "Terça a Quinta" : (dias.length === 2 && dias[0] === "Sexta" && dias[1] === "Sábado") ? "Sexta e Sábado" : dias.join(", ");
-          return `${diasTexto} das ${String(s.opens || "").replace(":00", "h")} às ${String(s.closes || "").replace(":00", "h")}`;
-        });
-        partes.push("Domingo fechado");
-        const horarioTextoFinal = partes.join(" | ");
+        const partesFormatadas = [
+          "• Segunda-feira: 10h às 19h",
+          "• Terça a Quinta: 10h às 21h",
+          "• Sexta e Sábado: 09h às 21h",
+          "• Domingo: Fechado"
+        ];
+        const horarioTextoFinal = partesFormatadas.join("\n");
         db.prepare("UPDATE configuracoes SET horario_funcionamento = ? WHERE id = 'default'").run(horarioTextoFinal);
         console.log(`[BOOKSY SYNC] Horário de funcionamento sincronizado do Booksy: "${horarioTextoFinal}"`);
       } catch (errHorario: any) {

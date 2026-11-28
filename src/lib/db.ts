@@ -96,6 +96,18 @@ export function getDb(): DatabaseSync {
         )
       `).run();
     } catch (e) {}
+
+    // Atualização automática: sincroniza o horário oficial real da GM / Booksy com Segunda aberta
+    try {
+      const cfg: any = dbInstance.prepare("SELECT horario_funcionamento FROM configuracoes WHERE id = 'default'").get();
+      if (!cfg?.horario_funcionamento || 
+          cfg.horario_funcionamento.includes("Segunda: Fechado") || 
+          cfg.horario_funcionamento.includes("Domingo e Segunda") || 
+          cfg.horario_funcionamento.includes("Terça a Sábado")) {
+        const horarioReal = "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado";
+        dbInstance.prepare("UPDATE configuracoes SET horario_funcionamento = ? WHERE id = 'default'").run(horarioReal);
+      }
+    } catch (e) {}
   }
 
   return dbInstance;
@@ -737,7 +749,7 @@ export function popularDadosIniciaisGM(db: DatabaseSync) {
       '11960129564',
       '(11) 96012-9564',
       'Fala guerreiro! Seja muito bem-vindo à GM Barbershop 💈 Como podemos te ajudar hoje?',
-      'Terça a Sábado das 09h às 20h'
+      '• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado'
     );
   `).run();
 

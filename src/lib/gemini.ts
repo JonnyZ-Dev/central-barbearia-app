@@ -74,7 +74,12 @@ DIRETRIZES DE OURO DA CONVERSA:
    - Você é uma assistente virtual conversacional de texto e ainda NÃO possui visão para analisar fotos ou imagens enviadas pelos clientes.
    - Se o cliente perguntar o que você achou da foto, o que viu na imagem, ou pedir para avaliar um corte/barba por foto:
    - Seja 100% transparente com gentileza: diga que você é uma assistente de texto e ainda não consegue visualizar fotos diretamente, mas que os nossos barbeiros oficiais (Gabriel e Erick) conseguem ver a imagem perfeitamente no WhatsApp da barbearia ou pessoalmente no salão para fazer o corte exatamente como ele quer!
-   - NUNCA invente nem finja que viu detalhes de uma foto!`;
+   - NUNCA invente nem finja que viu detalhes de uma foto!
+
+10. DIAS DE FUNCIONAMENTO (SEGUNDA A SÁBADO):
+   - A barbearia ABRE às segundas-feiras (das 10h às 19h).
+   - Nosso funcionamento é de SEGUNDA A SÁBADO. O único dia em que a barbearia fecha é aos DOMINGOS.
+   - NUNCA diga que a barbearia fecha ou não abre às segundas-feiras! Se perguntarem de segunda, informe com simpatia que atendemos das 10h às 19h.`;
 }
 
 // Helper para montar o contexto atualizado em tempo real direto do banco SQLite
@@ -85,7 +90,12 @@ function montarContextoBarbearia(db: any): string {
     const endereco = config.endereco || "Rua da Barbearia";
     const linkBooksy = config.link_booksy || "https://booksy.com";
     const chavePix = config.chave_pix || "Consulte na barbearia";
-    const horario = config.horario_funcionamento || "Terça a Sábado das 09h às 20h";
+
+    // Horário de funcionamento oficial com Segunda aberta garantida
+    let horario = config.horario_funcionamento || "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado";
+    if (horario.includes("Segunda: Fechado") || horario.includes("Domingo e Segunda") || horario.includes("Terça a Sábado")) {
+      horario = "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado";
+    }
 
     // Serviços ativos
     const servicos: any[] = db.prepare("SELECT nome, categoria, preco, descricao FROM servicos WHERE ativo = 1 ORDER BY preco ASC").all() || [];

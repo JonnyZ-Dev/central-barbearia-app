@@ -351,6 +351,9 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/dashboard");
       const json = await res.json();
+      if (json.config && (!json.config.horario_funcionamento || json.config.horario_funcionamento.includes("Segunda: Fechado") || json.config.horario_funcionamento.includes("Domingo e Segunda") || json.config.horario_funcionamento.includes("Terça a Sábado"))) {
+        json.config.horario_funcionamento = "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado";
+      }
       setData(json);
       if (json.planos?.length > 0 && !formMensalista.plano_id) {
         const p0 = json.planos[0];
@@ -4088,9 +4091,13 @@ export default function Dashboard() {
                         rows={4}
                         value={data?.config?.horario_funcionamento || ""}
                         onChange={(e) => setData({ ...data, config: { ...data.config, horario_funcionamento: e.target.value } })}
-                        placeholder="Ex:&#10;• Terça a Sexta: 09h às 20h&#10;• Sábado: 08h30 às 19h&#10;• Domingo e Segunda: Fechado"
+                        placeholder="Ex:&#10;• Segunda-feira: 10h às 19h&#10;• Terça a Quinta: 10h às 21h&#10;• Sexta e Sábado: 09h às 21h&#10;• Domingo: Fechado"
                         className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-amber-500 font-medium leading-relaxed resize-none"
                       />
+
+                      <span className="text-[11px] text-zinc-500 block">
+                        💡 Este horário é lido em tempo real pela <strong>Elaine.IA</strong> para informar o expediente aos clientes no WhatsApp.
+                      </span>
 
                       {/* Modelos rápidos */}
                       <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -4101,12 +4108,12 @@ export default function Dashboard() {
                             ...data,
                             config: {
                               ...data.config,
-                              horario_funcionamento: "• Terça a Sexta: 09h às 20h\n• Sábado: 08h30 às 19h\n• Domingo e Segunda: Fechado"
+                              horario_funcionamento: "• Segunda-feira: 10h às 19h\n• Terça a Quinta: 10h às 21h\n• Sexta e Sábado: 09h às 21h\n• Domingo: Fechado"
                             }
                           })}
-                          className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
+                          className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 rounded-lg text-xs font-bold border border-emerald-500/30 transition flex items-center gap-1 shadow-sm"
                         >
-                          Terça a Sábado (Padrão GM)
+                          <Sparkles className="w-3 h-3 text-emerald-400" /> Horário Oficial Booksy / GM (Segunda Aberta)
                         </button>
                         <button
                           type="button"
@@ -4114,12 +4121,12 @@ export default function Dashboard() {
                             ...data,
                             config: {
                               ...data.config,
-                              horario_funcionamento: "• Segunda a Sexta: 09h às 20h\n• Sábado: 09h às 18h\n• Domingo: Fechado"
+                              horario_funcionamento: "• Segunda a Sábado: 09h às 21h\n• Domingo: Fechado"
                             }
                           })}
                           className="px-2.5 py-1 bg-zinc-800/80 hover:bg-zinc-800 text-zinc-300 rounded-lg text-xs font-medium border border-zinc-700/60 transition"
                         >
-                          Segunda a Sábado
+                          Segunda a Sábado (09h às 21h)
                         </button>
                         <button
                           type="button"
