@@ -497,9 +497,10 @@ export default function Dashboard() {
             const ext = mapa.get(chave);
             const prefereTextoAtual = (!c.ultima_mensagem?.startsWith("(Atend") && ext.ultima_mensagem?.startsWith("(Atend"));
             const maisRecente = Number(c.atualizado_em) > Number(ext.atualizado_em);
-            const status = (ext.status === "HUMANO" || c.status === "HUMANO") ? "HUMANO" : c.status;
-            const motivo = (ext.status === "HUMANO" ? ext.motivo_pausa : c.motivo_pausa) || ext.motivo_pausa || c.motivo_pausa;
             const minutos = Math.max(ext.minutos_restantes || 0, c.minutos_restantes || 0);
+            const ehHumanoAtivo = minutos > 0 && (c.status === "HUMANO" || ext.status === "HUMANO");
+            const status = ehHumanoAtivo ? "HUMANO" : "IA";
+            const motivo = ehHumanoAtivo ? (c.motivo_pausa || ext.motivo_pausa || "Atendimento assumido") : null;
 
             mapa.set(chave, {
               ...ext,

@@ -579,6 +579,23 @@ export function listarConversasCompletas() {
     const db = getDb();
     const agora = Date.now();
 
+    // 0. Limpeza preventiva de atendimentos humanos expirados no SQLite e no cache em memória
+    try {
+      db.prepare("DELETE FROM atendimentos_humanos WHERE expira_em <= ?").run(agora);
+      db.prepare(`
+        UPDATE conversas_whatsapp 
+        SET status = 'IA', motivo_pausa = NULL 
+        WHERE status = 'HUMANO' 
+          AND remote_jid NOT IN (SELECT remote_jid FROM atendimentos_humanos WHERE expira_em > ?)
+      `).run(agora);
+    } catch (e) {}
+
+    for (const [k, v] of atendimentosHumanosCache.entries()) {
+      if (v.expiraEm <= agora) {
+        atendimentosHumanosCache.delete(k);
+      }
+    }
+
     // 1. Limpeza preventiva de duplicatas históricas no banco SQLite:
     // Mantém apenas 1 registro por cliente (últimos 8 dígitos), priorizando mensagem real e data mais recente
     try {
@@ -669,8 +686,16 @@ export function listarConversasCompletas() {
                         (numLimpo ? atendimentosHumanosCache.get(`${numLimpo}@s.whatsapp.net`) : undefined);
 
       const minutosRestantes = itemCache && itemCache.expiraEm > agora ? Math.round((itemCache.expiraEm - agora) / 60000) : 0;
-      const statusFinal = (estaPausado || r.status === "HUMANO") ? "HUMANO" : "IA";
+      // Só é HUMANO se o atendimento realmente estiver ativo e dentro do prazo de validade!
+      const statusFinal = (estaPausado && minutosRestantes > 0) ? "HUMANO" : "IA";
       const motivoFinal = statusFinal === "HUMANO" ? (itemCache?.motivo || r.motivo_pausa || "Atendimento assumido") : null;
+
+      // Se a conversa estava registrada como HUMANO no banco mas expirou, sincroniza de volta para IA
+      if (statusFinal === "IA" && r.status === "HUMANO") {
+        try {
+          db.prepare("UPDATE conversas_whatsapp SET status = 'IA', motivo_pausa = NULL WHERE remote_jid = ?").run(r.remote_jid);
+        } catch (e) {}
+      }
 
       return {
         remote_jid: r.remote_jid,
@@ -828,6 +853,7 @@ export function removerPausaAtendimentoHumano(remoteJid: string) {
   try {
     const ultimos8 = numLimpo.length >= 8 ? numLimpo.slice(-8) : numLimpo;
     getDb().prepare("DELETE FROM atendimentos_humanos WHERE remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%')").run(remoteJid, numLimpo, ultimos8, ultimos8);
+    getDb().prepare("UPDATE conversas_whatsapp SET status = 'IA', motivo_pausa = NULL WHERE remote_jid = ? OR numero = ? OR (? != '' AND numero LIKE '%' || ? || '%')").run(remoteJid, numLimpo, ultimos8, ultimos8);
     registrarAtividadeConversa(remoteJid, {
       status: "IA",
       motivoPausa: undefined
