@@ -1380,9 +1380,17 @@ export async function iniciarWhatsAppBot() {
           // 1. DETECÇÃO INTELIGENTE DE INTERVENÇÃO HUMANA (Mensagem enviada pela própria barbearia)
           if (msg.key.fromMe) {
             const msgId = msg.key.id;
-            if (msgId && mensagensEnviadasPeloRobo.has(msgId)) {
-              // Foi o próprio robô que disparou esta mensagem automaticamente
-              mensagensEnviadasPeloRobo.delete(msgId);
+            let foiEnviadaPelaIA = Boolean(msgId && mensagensEnviadasPeloRobo.has(msgId));
+            if (!foiEnviadaPelaIA && msgId) {
+              try {
+                const dbCheck = getDb();
+                const ehMsgIa = dbCheck.prepare("SELECT 1 FROM historico_mensagens WHERE id = ? AND remetente = 'IA'").get(msgId);
+                if (ehMsgIa) foiEnviadaPelaIA = true;
+              } catch (e) {}
+            }
+
+            if (foiEnviadaPelaIA) {
+              if (msgId) mensagensEnviadasPeloRobo.delete(msgId);
               continue;
             }
 
