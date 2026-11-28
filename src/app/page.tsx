@@ -1587,7 +1587,7 @@ export default function Dashboard() {
             >
               <div className="flex items-center gap-3">
                 <MessageSquare className="w-4 h-4" />
-                Robô do WhatsApp
+                Conexão WhatsApp
               </div>
               <span className="flex items-center gap-1.5">
                 {botStatus.status === "CONECTADO" ? (
@@ -2506,10 +2506,10 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
                 <h2 className="text-2xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-                  <MessageSquare className="w-6 h-6 text-emerald-400" /> Robô de Atendimento WhatsApp
+                  <MessageSquare className="w-6 h-6 text-emerald-400" /> Conexão WhatsApp (Elaine.IA)
                 </h2>
                 <p className="text-sm text-zinc-400 mt-0.5">
-                  Conexão local direta via WhatsApp, com editor de mensagens e sincronização em tempo real.
+                  Conexão local direta via WhatsApp e sincronização de serviços com o Booksy.
                 </p>
               </div>
 
@@ -3470,8 +3470,8 @@ export default function Dashboard() {
                                 <span className="text-[11px] text-amber-300/90 font-medium bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-lg flex items-center gap-1">
                                   <Clock className="w-3 h-3 text-amber-400" />
                                   {conv.minutos_restantes > 0 
-                                    ? `Robô pausado (~${conv.minutos_restantes} min restantes)` 
-                                    : "Robô pausado para atendimento do barbeiro"}
+                                    ? `Elaine.IA em silêncio (~${conv.minutos_restantes} min restantes)` 
+                                    : "Elaine.IA em silêncio para atendimento do barbeiro"}
                                 </span>
                                 {conv.motivo_pausa && (
                                   <span className="text-[11px] text-zinc-400 italic">
@@ -3542,7 +3542,7 @@ export default function Dashboard() {
                                 alternarAtendimentoConversa(conv.remote_jid, "HUMANO", conv.nome, conv.numero);
                               }}
                               className="px-3.5 py-2 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-amber-500/20 transition disabled:opacity-50 whitespace-nowrap active:scale-95"
-                              title="Pausa o robô nesta conversa para o barbeiro falar sem ser interrompido"
+                              title="Pausa a Elaine.IA nesta conversa para o barbeiro falar sem ser interrompido"
                             >
                               <Headphones className="w-3.5 h-3.5 text-black" />
                               {acaoConversaLoading === conv.remote_jid ? "Assumindo..." : "Assumir Atendimento"}
@@ -4148,8 +4148,8 @@ export default function Dashboard() {
                       <Bell className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-extrabold text-base text-white">Intervenção Humana & Automações do Robô</h3>
-                      <p className="text-xs text-zinc-400">Regras para o robô não falar por cima do atendente e aviso de renovação do Clube VIP</p>
+                      <h3 className="font-extrabold text-base text-white">Intervenção Humana & Pausa da Elaine.IA</h3>
+                      <p className="text-xs text-zinc-400">Regras para a Elaine.IA não falar por cima do barbeiro e aviso de renovação do Clube VIP</p>
                     </div>
                   </div>
 
@@ -4158,20 +4158,20 @@ export default function Dashboard() {
                     <div className="p-4 bg-zinc-950/70 border border-zinc-800 rounded-2xl space-y-3">
                       <div className="flex items-center gap-2">
                         <UserCheck className="w-4 h-4 text-emerald-400" />
-                        <h4 className="font-bold text-sm text-white">Pausa Automática Inteligente</h4>
+                        <h4 className="font-bold text-sm text-white">Pausa Automática da Elaine.IA</h4>
                       </div>
                       <p className="text-xs text-zinc-400">
-                        Quando você digita no WhatsApp pelo celular, o robô pausa automaticamente para você atender o cliente sem interrupções.
+                        Quando você digita no WhatsApp pelo celular, a Elaine.IA pausa automaticamente para você atender o cliente sem interrupções.
                       </p>
 
                       <div className="pt-1">
-                        <label className="text-xs font-bold text-zinc-400 uppercase">Tempo de Pausa do Robô (Minutos)</label>
+                        <label className="text-xs font-bold text-zinc-400 uppercase">Tempo de Silêncio da Elaine.IA (Minutos)</label>
                         <input 
                           type="number" 
                           min="5" 
                           max="1440"
-                          placeholder="120"
-                          value={data?.config?.tempo_pausa_humano_minutos ?? 120}
+                          placeholder="30"
+                          value={data?.config?.tempo_pausa_humano_minutos ?? 30}
                           onChange={(e) => setData({
                             ...data,
                             config: { ...data.config, tempo_pausa_humano_minutos: Number(e.target.value) }
@@ -4182,7 +4182,8 @@ export default function Dashboard() {
 
                       <div className="p-3 bg-zinc-900/80 rounded-xl border border-zinc-800/80 text-xs text-zinc-400 leading-relaxed space-y-1">
                         <ul className="list-disc list-inside space-y-1 text-[11px] text-zinc-400">
-                          <li><strong>Reativação Automática:</strong> Se o cliente mandar qualquer saudação (como <em>"oi"</em>, <em>"olá"</em>, <em>"boa tarde"</em>) após a conversa, a Elaine.IA reativa na hora.</li>
+                          <li><strong>Silêncio por 30 minutos:</strong> Se o barbeiro falar pelo WhatsApp, a Elaine.IA fica quieta por 30 min sem responder por cima.</li>
+                          <li><strong>Reativação Automática:</strong> Se a conversa ficar sem novas mensagens por 30 min ou o cliente mandar saudação (como <em>"oi"</em>, <em>"olá"</em>), a Elaine.IA assume de volta.</li>
                           <li><strong>Controle pelo Painel:</strong> Você pode assumir ou devolver conversas para a Elaine.IA com 1 clique na aba <strong>Conversas & IA</strong>.</li>
                         </ul>
                       </div>
@@ -5391,7 +5392,7 @@ export default function Dashboard() {
                         disabled={acaoConversaLoading === modalConversa.remote_jid}
                         onClick={() => alternarAtendimentoConversa(modalConversa.remote_jid, "HUMANO", modalConversa.nome, modalConversa.numero)}
                         className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black rounded-xl text-xs font-black flex items-center gap-1 shadow-md shadow-amber-500/20 transition disabled:opacity-50"
-                        title="Pausa o robô nesta conversa para atendimento humano"
+                        title="Pausa a Elaine.IA nesta conversa para atendimento humano"
                       >
                         <Headphones className="w-3.5 h-3.5" />
                         <span className="hidden sm:inline">Assumir Atendimento</span>
